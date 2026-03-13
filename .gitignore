@@ -1,0 +1,19 @@
+# Variables de entorno — NUNCA subir al repositorio
+.env
+.env.local
+.env.*.local
+
+# Dependencias
+node_modules/
+
+# Compilación
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
