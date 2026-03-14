@@ -155,6 +155,16 @@ export enum TicketStatus {
   WINNER = "WINNER",       // Este boleto resultó ganador del sorteo
 }
 
+// ── Estado de un número individual de la rifa ───────────────────────────────
+// Cada número existe desde la creación de la rifa y cambia de estado
+// a medida que se reserva, se paga o gana.
+export enum RaffleNumberStatus {
+  AVAILABLE = "AVAILABLE",
+  RESERVED = "RESERVED",
+  PAID = "PAID",
+  WINNER = "WINNER",
+}
+
 // ── Estados de una transmisión ────────────────────────────────────────────────
 export enum TransmissionStatus {
   SCHEDULED = "SCHEDULED", // Programada para una fecha futura

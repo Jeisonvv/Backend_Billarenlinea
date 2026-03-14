@@ -22,6 +22,7 @@ import Order from "../models/order.model.ts";
 import Tournament from "../models/tournament.model.ts";
 import TournamentRegistration from "../models/tournament-registration.model.ts";
 import Raffle from "../models/raffle.model.ts";
+import RaffleNumber from "../models/raffle-number.model.ts";
 import RaffleTicket from "../models/raffle-ticket.model.ts";
 import TransmissionRequest from "../models/transmission-request.model.ts";
 import {
@@ -38,6 +39,7 @@ import {
   TournamentFormat,
   RaffleStatus,
   RegistrationStatus,
+  TicketStatus,
 } from "../models/enums.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -401,8 +403,8 @@ async function seedRaffles(users: any[], count: number = 2) {
       prize: faker.commerce.productName(),
       prizeImageUrl: faker.image.url(),
       ticketPrice: faker.number.int({ min: 10000, max: 100000 }),
-      totalTickets: faker.number.int({ min: 50, max: 500 }),
-      soldTickets: faker.number.int({ min: 0, max: 100 }),
+      totalTickets: faker.helpers.arrayElement([10, 100, 1000]),
+      soldTickets: 0,
       drawDate,
       imageUrl: faker.image.url(),
       createdBy: admin._id,
@@ -430,30 +432,37 @@ async function seedRaffles(users: any[], count: number = 2) {
 async function seedRaffleTickets(users: any[], raffles: any[], count: number = 5) {
   log(`\n→ Creando ${count} boletos de rifa...`, colors.cyan);
 
-  const tickets = [];
+  const tickets: any[] = [];
 
   for (let i = 0; i < count; i++) {
     const user = faker.helpers.arrayElement(users);
     const raffle = faker.helpers.arrayElement(raffles);
-    const quantity = faker.number.int({ min: 1, max: 5 });
-    const ticketNumbers = Array.from({ length: quantity }, (_, idx) =>
-      faker.number.int({ min: 1, max: 500 })
-    );
+    const availableNumbers = await RaffleNumber.findAvailableByRaffle(raffle._id);
+    if (availableNumbers.length === 0) {
+      continue;
+    }
 
-    const ticketData = {
+    const quantity = faker.number.int({ min: 1, max: Math.min(5, availableNumbers.length) });
+    const ticketNumbers = faker.helpers.arrayElements(availableNumbers, quantity).map((entry) => entry.number);
+    const ticketStatus = faker.helpers.arrayElement([TicketStatus.RESERVED, TicketStatus.PAID]);
+
+    const ticketData: Record<string, unknown> = {
       raffle: raffle._id,
       user: user._id,
       numbers: ticketNumbers,
-      quantity,
+      quantity: ticketNumbers.length,
       unitPrice: raffle.ticketPrice,
-      total: quantity * raffle.ticketPrice,
-      status: faker.helpers.arrayElement(["AVAILABLE", "RESERVED", "PAID", "WINNER"]),
+      total: ticketNumbers.length * raffle.ticketPrice,
+      status: ticketStatus,
       paymentMethod: faker.helpers.arrayElement(Object.values(PaymentMethod)),
       paymentReference: faker.number.int({min: 100000000000000, max: 999999999999999}).toString(),
-      paidAt: faker.date.past(),
       channel: faker.helpers.arrayElement(Object.values(Channel)),
       isWinner: false,
     };
+
+    if (ticketStatus === TicketStatus.PAID) {
+      ticketData.paidAt = faker.date.past();
+    }
 
     try {
       const ticket = await RaffleTicket.create(ticketData);

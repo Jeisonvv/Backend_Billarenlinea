@@ -41,6 +41,10 @@ export type { ITournamentRegistration, ITournamentRegistrationDocument, ITournam
 export { default as Raffle } from "./raffle.model.ts";
 export type { IRaffle, IRaffleDocument } from "./raffle.model.ts";
 
+// Modelo de números de rifa
+export { default as RaffleNumber } from "./raffle-number.model.ts";
+export type { IRaffleNumber, IRaffleNumberDocument, IRaffleNumberModel } from "./raffle-number.model.ts";
+
 // Modelo de boletos de rifa
 export { default as RaffleTicket } from "./raffle-ticket.model.ts";
 export type { IRaffleTicket, IRaffleTicketDocument, IRaffleTicketModel } from "./raffle-ticket.model.ts";

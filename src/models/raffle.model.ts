@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
 import { RaffleStatus } from "./enums.ts";
+import RaffleNumber, { isPowerOfTen } from "./raffle-number.model.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES
@@ -24,13 +25,13 @@ export interface IRaffle {
   prizeImageUrl?: string; // Foto del premio
 
   ticketPrice: number; // Precio por boleto
-  totalTickets: number; // Cantidad total de boletos disponibles (ej: 100, 200, 500)
+  totalTickets: number; // Cantidad total de boletos disponibles (10, 100, 1000, 10000, ...)
   soldTickets: number;  // Cuántos boletos han sido PAGADOS hasta ahora
 
   drawDate: Date; // Fecha y hora en que se realizará el sorteo
 
   // Se llenan DESPUÉS del sorteo
-  winnerTicket?: number;                 // Número del boleto ganador
+  winnerTicket?: string;                 // Número del boleto ganador respetando ceros a la izquierda
   winner?: mongoose.Types.ObjectId;      // Usuario ganador (ref a User)
 
   imageUrl?: string; // Imagen promocional de la rifa
@@ -83,7 +84,11 @@ const raffleSchema = new Schema<IRaffleDocument>(
     totalTickets: {
       type: Number,
       required: true,
-      min: 2, // Mínimo 2 boletos para que tenga sentido una rifa
+      min: 10,
+      validate: {
+        validator: isPowerOfTen,
+        message: "totalTickets debe ser una potencia de 10 (10, 100, 1000, ...).",
+      },
     },
     soldTickets: {
       type: Number,
@@ -94,7 +99,7 @@ const raffleSchema = new Schema<IRaffleDocument>(
       type: Date,
       required: true,
     },
-    winnerTicket: Number,
+    winnerTicket: String,
     winner: {
       type: Schema.Types.ObjectId,
       ref: "User", // Referencia al usuario que ganó
@@ -119,6 +124,24 @@ const raffleSchema = new Schema<IRaffleDocument>(
 
 // Para listar rifas activas ordenadas por fecha de sorteo (las más próximas primero)
 raffleSchema.index({ status: 1, drawDate: 1 });
+
+raffleSchema.pre("save", function () {
+  if (!this.isNew && this.isModified("totalTickets")) {
+    throw new Error("No puedes cambiar totalTickets después de crear la rifa.");
+  }
+
+  if (this.soldTickets > this.totalTickets) {
+    throw new Error("soldTickets no puede ser mayor que totalTickets.");
+  }
+
+  this.$locals.wasNew = this.isNew;
+});
+
+raffleSchema.post("save", async function (doc) {
+  if (!doc.$locals.wasNew) return;
+
+  await RaffleNumber.generateForRaffle(doc._id, doc.totalTickets);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VIRTUALS

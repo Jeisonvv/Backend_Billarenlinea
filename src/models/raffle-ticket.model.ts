@@ -1,5 +1,7 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { Channel, PaymentMethod, TicketStatus } from "./enums.ts";
+import { Channel, PaymentMethod, RaffleNumberStatus, TicketStatus } from "./enums.ts";
+import Raffle from "./raffle.model.ts";
+import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES
@@ -15,7 +17,7 @@ import { Channel, PaymentMethod, TicketStatus } from "./enums.ts";
  *   {
  *     raffle: ObjectId("rifa-predator"),
  *     user: ObjectId("juan"),
- *     numbers: [14, 27, 53, 61, 88],  ← los 5 números que le tocaron
+ *     numbers: ["14", "27", "53", "61", "88"],  ← los 5 números que le tocaron
  *     quantity: 5,
  *     unitPrice: 10000,
  *     total: 50000,
@@ -24,7 +26,7 @@ import { Channel, PaymentMethod, TicketStatus } from "./enums.ts";
  *
  * Para saber los boletos de Juan en esa rifa:
  *   await RaffleTicket.findNumbersByUserAndRaffle(juan._id, rifa._id)
- *   // → [14, 27, 53, 61, 88]
+ *   // → ["14", "27", "53", "61", "88"]
  *
  * Si Juan hace otra compra después, se crea un NUEVO documento RaffleTicket,
  * no se modifica el anterior. Así mantenemos el historial de cada transacción.
@@ -33,7 +35,7 @@ export interface IRaffleTicket {
   raffle: mongoose.Types.ObjectId; // A qué rifa pertenecen estos boletos
   user: mongoose.Types.ObjectId;   // Quién compró los boletos
 
-  numbers: number[]; // Array con los números de boleto comprados en esta transacción
+  numbers: string[]; // Array con los números de boleto comprados en esta transacción
   quantity: number;  // Cuántos boletos se compraron (debe coincidir con numbers.length)
 
   unitPrice: number; // Precio por boleto al momento de comprar (snapshot)
@@ -76,7 +78,7 @@ export interface IRaffleTicketModel extends Model<IRaffleTicketDocument> {
   findNumbersByUserAndRaffle(
     userId: mongoose.Types.ObjectId,
     raffleId: mongoose.Types.ObjectId,
-  ): Promise<number[]>;
+  ): Promise<string[]>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,10 +101,10 @@ const raffleTicketSchema = new Schema<
       required: true,
     },
     numbers: {
-      type: [Number],
+      type: [String],
       required: true,
       validate: {
-        validator: (v: number[]) => v.length > 0,
+        validator: (v: string[]) => v.length > 0,
         message: "Debe haber al menos un número de boleto.",
       },
     },
@@ -145,6 +147,80 @@ const raffleTicketSchema = new Schema<
   { timestamps: true },
 );
 
+raffleTicketSchema.pre("validate", async function () {
+  if (!this.raffle) {
+    throw new Error("La rifa es obligatoria.");
+  }
+
+  const raffle = await Raffle.findById(this.raffle).select("ticketPrice totalTickets");
+  if (!raffle) {
+    throw new Error("La rifa no existe.");
+  }
+
+  const normalizedNumbers = this.numbers.map((numberValue) => normalizeRaffleNumberInput(numberValue, raffle.totalTickets));
+  const uniqueNumbers = new Set(normalizedNumbers);
+
+  if (uniqueNumbers.size !== normalizedNumbers.length) {
+    throw new Error("No puedes repetir números dentro de la misma compra.");
+  }
+
+  const availableCount = await RaffleNumber.countDocuments({
+    raffle: this.raffle,
+    number: { $in: normalizedNumbers },
+    status: RaffleNumberStatus.AVAILABLE,
+  });
+
+  if (availableCount !== normalizedNumbers.length) {
+    throw new Error("Uno o más números ya no están disponibles.");
+  }
+
+  this.numbers = normalizedNumbers;
+  this.quantity = normalizedNumbers.length;
+  this.unitPrice = raffle.ticketPrice;
+  this.total = this.quantity * this.unitPrice;
+
+  if (this.status === TicketStatus.PAID && !this.paidAt) {
+    this.paidAt = new Date();
+  }
+});
+
+raffleTicketSchema.pre("save", async function () {
+  if (!this.isNew) return;
+
+  const now = new Date();
+  const targetNumberStatus = this.status === TicketStatus.PAID
+    ? RaffleNumberStatus.PAID
+    : RaffleNumberStatus.RESERVED;
+
+  const updateResult = await RaffleNumber.updateMany(
+    {
+      raffle: this.raffle,
+      number: { $in: this.numbers },
+      status: RaffleNumberStatus.AVAILABLE,
+    },
+    {
+      $set: {
+        status: targetNumberStatus,
+        user: this.user,
+        ticket: this._id,
+        reservedAt: now,
+        ...(this.status === TicketStatus.PAID ? { paidAt: this.paidAt ?? now } : {}),
+      },
+    },
+  );
+
+  if (updateResult.modifiedCount !== this.numbers.length) {
+    throw new Error("No fue posible bloquear todos los números solicitados.");
+  }
+
+  if (this.status === TicketStatus.PAID) {
+    await Raffle.updateOne(
+      { _id: this.raffle },
+      { $inc: { soldTickets: this.numbers.length } },
+    );
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ÍNDICES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,7 +249,7 @@ raffleTicketSchema.index({ raffle: 1, isWinner: 1 });
  * Ejemplo:
  *   const tickets = await RaffleTicket.findByUser(user._id);
  *   tickets[0].raffle  // → objeto Raffle completo (nombre, premio, etc.)
- *   tickets[0].numbers // → [14, 27, 53] (números comprados en esa transacción)
+ *   tickets[0].numbers // → ["14", "27", "53"] (números comprados en esa transacción)
  */
 raffleTicketSchema.statics.findByUser = function (
   userId: mongoose.Types.ObjectId,
@@ -210,14 +286,14 @@ raffleTicketSchema.statics.findByRaffle = function (
  * Ejemplo:
  *   // Juan hizo 2 compras: [14, 27] y después [53, 61]
  *   const nums = await RaffleTicket.findNumbersByUserAndRaffle(juan._id, rifa._id);
- *   // → [14, 27, 53, 61]  (todos sus números juntos)
+ *   // → ["14", "27", "53", "61"]  (todos sus números juntos)
  *
  * Uso típico: mostrarle al usuario "tus números son: 14, 27, 53, 61"
  */
 raffleTicketSchema.statics.findNumbersByUserAndRaffle = async function (
   userId: mongoose.Types.ObjectId,
   raffleId: mongoose.Types.ObjectId,
-): Promise<number[]> {
+): Promise<string[]> {
   const tickets = await this.find({
     user: userId,
     raffle: raffleId,
