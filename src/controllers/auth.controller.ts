@@ -14,6 +14,7 @@ import { createHash, randomBytes } from "node:crypto";
 import User from "../models/user.model.ts";
 import { UserRole, Channel, UserStatus } from "../models/enums.ts";
 import RevokedToken from "../models/revoked-token.model.ts";
+import { isMailConfigured, sendPasswordResetEmail } from "../services/mail.service.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/logout
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,6 +58,26 @@ function createResetToken() {
     tokenHash: hashResetToken(token),
     expiresAt: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
   };
+}
+
+function buildPasswordResetUrl(token: string) {
+  const configuredBaseUrl = process.env.PASSWORD_RESET_URL_BASE?.trim();
+
+  if (configuredBaseUrl) {
+    const url = new URL(configuredBaseUrl);
+    url.searchParams.set("token", token);
+    return url.toString();
+  }
+
+  const frontendUrl = process.env.FRONTEND_URL?.trim() ?? process.env.ALLOWED_ORIGINS?.split(",")[0]?.trim();
+
+  if (!frontendUrl) {
+    throw new Error("No se encontró FRONTEND_URL o PASSWORD_RESET_URL_BASE para construir el link de recuperación.");
+  }
+
+  const url = new URL("/reset-password", frontendUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,6 +232,7 @@ export async function forgotPassword(req: Request, res: Response) {
 
     if (user?.webAuth?.email) {
       const { token, tokenHash, expiresAt } = createResetToken();
+      const resetUrl = buildPasswordResetUrl(token);
 
       await User.updateOne(
         { _id: user._id },
@@ -222,10 +244,21 @@ export async function forgotPassword(req: Request, res: Response) {
         },
       );
 
-      if (process.env.NODE_ENV !== "production") {
+      if (isMailConfigured()) {
+        await sendPasswordResetEmail({
+          to: user.webAuth.email,
+          name: user.name,
+          resetUrl,
+          expiresAt,
+        });
+      }
+
+      if (process.env.NODE_ENV !== "production" || !isMailConfigured()) {
         responsePayload.data = {
           resetToken: token,
           expiresAt,
+          resetUrl,
+          emailSent: isMailConfigured(),
         };
       }
     }
