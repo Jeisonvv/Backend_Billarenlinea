@@ -23,7 +23,7 @@ import Tournament from "../models/tournament.model.ts";
 import TournamentRegistration from "../models/tournament-registration.model.ts";
 import Raffle from "../models/raffle.model.ts";
 import RaffleTicket from "../models/raffle-ticket.model.ts";
-import Transmission from "../models/transmission.model.ts";
+import TransmissionRequest from "../models/transmission-request.model.ts";
 import {
   Channel,
   UserSource,
@@ -37,7 +37,6 @@ import {
   TournamentStatus,
   TournamentFormat,
   RaffleStatus,
-  TransmissionStatus,
   RegistrationStatus,
 } from "../models/enums.ts";
 
@@ -473,7 +472,7 @@ async function seedRaffleTickets(users: any[], raffles: any[], count: number = 5
 }
 
 /**
- * Crea transmisiones en vivo
+ * Crea solicitudes ficticias de transmisión
  */
 async function seedTransmissions(tournaments: any[], users: any[], count: number = 2) {
   log(`\n→ Creando ${count} transmisiones...`, colors.cyan);
@@ -485,24 +484,23 @@ async function seedTransmissions(tournaments: any[], users: any[], count: number
     const admin = faker.helpers.arrayElement(users);
 
     const transmissionData = {
-      title: `Transmisión: ${tournament.name}`,
-      description: faker.lorem.paragraph(),
-      status: faker.helpers.arrayElement(Object.values(TransmissionStatus)),
-      platform: faker.helpers.arrayElement(["YOUTUBE", "FACEBOOK", "TWITCH"]),
-      streamUrl: faker.internet.url(),
-      thumbnailUrl: faker.image.url(),
-      scheduledAt: faker.date.future(),
-      startedAt: faker.date.recent(),
-      tournament: tournament._id,
-      viewerCount: faker.number.int({ min: 0, max: 1000 }),
-      createdBy: admin._id,
+      contactName: admin.name,
+      contactPhone: Number(faker.string.numeric(10)),
+      billiardName: tournament.name,
+      city: faker.location.city(),
+      tournamentType: faker.helpers.arrayElement(["RELAMPAGO", "ABIERTO"]),
+      eventDate: faker.date.future().toISOString(),
+      serviceType: faker.helpers.arrayElement(["TRANSMISION", "ORGANIZACION", "AMBOS"]),
+      status: faker.helpers.arrayElement(["PENDIENTE", "COTIZADO", "CONFIRMADO", "RECHAZADO"]),
+      comments: faker.lorem.sentence(),
+      whatsappId: admin.identities?.[0]?.providerId,
     };
 
     try {
-      const transmission = await Transmission.create(transmissionData);
+      const transmission = await TransmissionRequest.create(transmissionData);
       transmissions.push(transmission);
       log(
-        `  ✓ Transmisión creada: ${transmission.title} (${transmission._id})`,
+        `  ✓ Solicitud de transmisión creada: ${transmission.billiardName} (${transmission._id})`,
         colors.yellow
       );
     } catch (error) {
@@ -599,7 +597,7 @@ async function seedDatabase() {
   • Inscripciones: ${mainRegistrations} en torneo principal + 10 aleatorias
   • Rifas:         ${raffles.length}
   • Boletos:       8
-  • Transmisiones: 2
+  • Solicitudes de transmisión: 2
 
   ★ Torneo principal: "${mainTournament.name}" (${mainTournament._id})
     → Todos los ${users.length} usuarios inscritos y CONFIRMADOS

@@ -4,10 +4,13 @@
  * Endpoints:
  *   POST /api/auth/register  → Crea un usuario con credenciales web (email + password)
  *   POST /api/auth/login     → Valida credenciales y devuelve un JWT
+ *   POST /api/auth/forgot-password → Genera token temporal para recuperar contraseña
+ *   POST /api/auth/reset-password  → Cambia la contraseña usando el token temporal
  */
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { createHash, randomBytes } from "node:crypto";
 import User from "../models/user.model.ts";
 import { UserRole, Channel, UserStatus } from "../models/enums.ts";
 import RevokedToken from "../models/revoked-token.model.ts";
@@ -36,6 +39,25 @@ export async function logout(req: Request, res: Response) {
 
 const SALT_ROUNDS = 12;
 const TOKEN_EXPIRY = "30d";
+const RESET_TOKEN_EXPIRY_MS = 1000 * 60 * 60;
+
+function normalizeEmail(email: string) {
+  return email.toLowerCase().trim();
+}
+
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function createResetToken() {
+  const token = randomBytes(32).toString("hex");
+
+  return {
+    token,
+    tokenHash: hashResetToken(token),
+    expiresAt: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/register
@@ -60,7 +82,8 @@ export async function register(req: Request, res: Response) {
     }
 
     // Verificar si el email ya está registrado
-    const existing = await User.findOne({ "webAuth.email": email.toLowerCase().trim() });
+    const normalizedEmail = normalizeEmail(email);
+    const existing = await User.findOne({ "webAuth.email": normalizedEmail });
     if (existing) {
       res.status(409).json({ ok: false, message: "Este email ya está registrado." });
       return;
@@ -72,9 +95,9 @@ export async function register(req: Request, res: Response) {
       name: name.trim(),
       status: UserStatus.NEW,
       role: UserRole.CUSTOMER,           // rol por defecto: cliente
-      identities: [{ provider: Channel.WEB, providerId: email.toLowerCase().trim() }],
+      identities: [{ provider: Channel.WEB, providerId: normalizedEmail }],
       webAuth: {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         passwordHash,
         emailVerified: false,
       },
@@ -88,7 +111,7 @@ export async function register(req: Request, res: Response) {
       data: {
         id: user._id,
         name: user.name,
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         role: user.role,
       },
     });
@@ -114,8 +137,9 @@ export async function login(req: Request, res: Response) {
     }
 
     // Buscar usuario y TRAER el hash (normalmente excluido)
+    const normalizedEmail = normalizeEmail(email);
     const user = await User.findOne({
-      "webAuth.email": email.toLowerCase().trim(),
+      "webAuth.email": normalizedEmail,
       deletedAt: { $exists: false },
     }).select("+webAuth.passwordHash");
 
@@ -155,6 +179,108 @@ export async function login(req: Request, res: Response) {
         role: user.role,
       },
     });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/forgot-password
+// ─────────────────────────────────────────────────────────────────────────────
+export async function forgotPassword(req: Request, res: Response) {
+  try {
+    const { email } = req.body as { email?: string };
+
+    if (!email) {
+      res.status(400).json({ ok: false, message: "email es obligatorio." });
+      return;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const genericMessage = "Si existe una cuenta con ese email, enviaremos instrucciones para recuperar la contraseña.";
+
+    const user = await User.findOne({
+      "webAuth.email": normalizedEmail,
+      deletedAt: { $exists: false },
+    });
+
+    const responsePayload: Record<string, unknown> = {
+      ok: true,
+      message: genericMessage,
+    };
+
+    if (user?.webAuth?.email) {
+      const { token, tokenHash, expiresAt } = createResetToken();
+
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            "webAuth.resetToken": tokenHash,
+            "webAuth.resetTokenExpiresAt": expiresAt,
+          },
+        },
+      );
+
+      if (process.env.NODE_ENV !== "production") {
+        responsePayload.data = {
+          resetToken: token,
+          expiresAt,
+        };
+      }
+    }
+
+    res.json(responsePayload);
+  } catch (error: any) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/reset-password
+// ─────────────────────────────────────────────────────────────────────────────
+export async function resetPassword(req: Request, res: Response) {
+  try {
+    const { token, password } = req.body as { token?: string; password?: string };
+
+    if (!token || !password) {
+      res.status(400).json({ ok: false, message: "token y password son obligatorios." });
+      return;
+    }
+
+    if (password.length < 8) {
+      res.status(400).json({ ok: false, message: "La contraseña debe tener al menos 8 caracteres." });
+      return;
+    }
+
+    const tokenHash = hashResetToken(token);
+    const user = await User.findOne({
+      "webAuth.resetToken": tokenHash,
+      "webAuth.resetTokenExpiresAt": { $gt: new Date() },
+      deletedAt: { $exists: false },
+    });
+
+    if (!user) {
+      res.status(400).json({ ok: false, message: "El token de recuperación es inválido o expiró." });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          "webAuth.passwordHash": passwordHash,
+        },
+        $unset: {
+          "webAuth.resetToken": "",
+          "webAuth.resetTokenExpiresAt": "",
+        },
+      },
+    );
+
+    res.json({ ok: true, message: "La contraseña fue actualizada correctamente." });
   } catch (error: any) {
     res.status(500).json({ ok: false, message: error.message });
   }

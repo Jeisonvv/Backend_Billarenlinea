@@ -5,9 +5,11 @@
  *
  *   POST /register  → Crear cuenta web (email + password)
  *   POST /login     → Iniciar sesión → devuelve JWT
+ *   POST /forgot-password → Solicitar recuperación de contraseña
+ *   POST /reset-password  → Confirmar nueva contraseña con token
  */
 import { Router } from "express";
-import { register, login, logout } from "../controllers/auth.controller.ts";
+import { register, login, logout, forgotPassword, resetPassword } from "../controllers/auth.controller.ts";
 import { authLimiter } from "../middlewares/rateLimiter.middleware.ts";
 
 const router = Router();
@@ -16,6 +18,8 @@ const router = Router();
 
 router.post("/register", authLimiter, register);
 router.post("/login",    authLimiter, login);
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password", authLimiter, resetPassword);
 router.post("/logout", logout);
 
 export default router;

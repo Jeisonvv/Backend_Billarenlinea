@@ -46,8 +46,8 @@ export { default as RaffleTicket } from "./raffle-ticket.model.ts";
 export type { IRaffleTicket, IRaffleTicketDocument, IRaffleTicketModel } from "./raffle-ticket.model.ts";
 
 // Modelo de transmisiones
-export { default as Transmission } from "./transmission.model.ts";
-export type { ITransmission, ITransmissionDocument } from "./transmission.model.ts";
+export { default as Transmission } from "./transmission-request.model.ts";
+export type { ITransmission, ITransmissionDocument } from "./transmission-request.model.ts";
 
 // Modelo de partidos
 export { default as Match } from "./match.model.ts";

@@ -14,7 +14,7 @@ import Tournament from "../models/tournament.model.ts";
 import TournamentRegistration from "../models/tournament-registration.model.ts";
 import Raffle from "../models/raffle.model.ts";
 import RaffleTicket from "../models/raffle-ticket.model.ts";
-import Transmission from "../models/transmission.model.ts";
+import TransmissionRequest from "../models/transmission-request.model.ts";
 
 // Colores
 const colors = {
@@ -67,7 +67,7 @@ async function verifyData() {
       { name: "Inscripciones", model: TournamentRegistration, minExpected: 2 },
       { name: "Rifas", model: Raffle, minExpected: 2 },
       { name: "Boletos de Rifa", model: RaffleTicket, minExpected: 5 },
-      { name: "Transmisiones", model: Transmission, minExpected: 1 },
+      { name: "Solicitudes de Transmisión", model: TransmissionRequest, minExpected: 1 },
     ];
 
     log("📊 Contando documentos en la base de datos...\n", colors.cyan);

@@ -14,6 +14,9 @@ export interface TransmissionRequestDocument extends Document {
   createdAt: Date;
 }
 
+export type ITransmission = Omit<TransmissionRequestDocument, keyof Document>;
+export type ITransmissionDocument = TransmissionRequestDocument;
+
 const TransmissionRequestSchema = new Schema<TransmissionRequestDocument>({
   contactName: { type: String, required: true },
   contactPhone: { type: Number, required: true },
