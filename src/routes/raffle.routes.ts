@@ -21,6 +21,7 @@ import {
   getRaffles,
   purchaseRaffleTickets,
 } from "../controllers/raffle.controller.ts";
+import { createWompiCheckout } from "../controllers/payment.controller.ts";
 import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
 import { UserRole } from "../models/enums.ts";
 
@@ -33,6 +34,7 @@ router.get("/:id", getRaffleById);
 router.get("/:id/numbers", getRaffleNumbers);
 router.get("/:id/available-numbers", getAvailableRaffleNumbers);
 router.post("/:id/tickets", requireAuth, purchaseRaffleTickets);
+router.post("/:id/wompi/checkout", requireAuth, createWompiCheckout);
 router.post("/:id/draw", ...adminOrStaff, drawRaffle);
 
 export default router;

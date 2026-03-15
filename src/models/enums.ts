@@ -153,6 +153,7 @@ export enum TicketStatus {
   RESERVED = "RESERVED",   // Separado por alguien, esperando pago
   PAID = "PAID",           // Pagado y confirmado (boleto válido para el sorteo)
   WINNER = "WINNER",       // Este boleto resultó ganador del sorteo
+  CANCELLED = "CANCELLED", // Reserva o compra cancelada/liberada
 }
 
 // ── Estado de un número individual de la rifa ───────────────────────────────
@@ -163,6 +164,20 @@ export enum RaffleNumberStatus {
   RESERVED = "RESERVED",
   PAID = "PAID",
   WINNER = "WINNER",
+}
+
+// ── Proveedor de pagos ──────────────────────────────────────────────────────
+export enum PaymentProvider {
+  WOMPI = "WOMPI",
+}
+
+// ── Estados de una transacción externa de pago ──────────────────────────────
+export enum PaymentTransactionStatus {
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  DECLINED = "DECLINED",
+  VOIDED = "VOIDED",
+  ERROR = "ERROR",
 }
 
 // ── Estados de una transmisión ────────────────────────────────────────────────

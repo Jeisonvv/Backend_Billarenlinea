@@ -26,6 +26,7 @@ import userRoutes from './routes/user.routes.ts';
 import authRoutes from './routes/auth.routes.ts';
 import transmissionRoutes from './routes/transmission.routes.ts';
 import raffleRoutes from './routes/raffle.routes.ts';
+import paymentRoutes from './routes/payment.routes.ts';
 import { generalLimiter } from './middlewares/rateLimiter.middleware.ts';
 import { errorHandler } from './middlewares/errorHandler.middleware.ts';
 
@@ -88,6 +89,7 @@ app.use('/api/tournaments', tournamentRoutes); // Torneos, grupos y brackets
 app.use('/api/matches',     matchRoutes);      // Partidos y resultados
 app.use('/api/transmissions', transmissionRoutes); // Transmisiones en vivo/eventos
 app.use('/api/raffles',     raffleRoutes);     // Rifas, números y sorteos
+app.use('/api/payments',    paymentRoutes);    // Integraciones de pago
 
 // ── Manejo global de errores ────────────────────────────────────────────────
 // DEBE ir ÚLTIMO, después de todas las rutas

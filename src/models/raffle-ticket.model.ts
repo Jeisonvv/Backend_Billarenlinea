@@ -1,7 +1,9 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { Channel, PaymentMethod, RaffleNumberStatus, TicketStatus } from "./enums.ts";
+import { Channel, PaymentMethod, PaymentProvider, PaymentTransactionStatus, RaffleNumberStatus, TicketStatus } from "./enums.ts";
 import Raffle from "./raffle.model.ts";
 import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.ts";
+
+const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES
@@ -47,6 +49,10 @@ export interface IRaffleTicket {
   paymentMethod?: PaymentMethod;
   paymentReference?: string; // Comprobante de pago, número de transferencia, etc.
   paidAt?: Date;             // Cuándo se confirmó el pago
+  paymentProvider?: PaymentProvider;
+  paymentStatus?: PaymentTransactionStatus;
+  paymentTransactionId?: string;
+  reservedUntil?: Date;
 
   channel: Channel; // Por qué canal compró (WhatsApp, web, etc.)
 
@@ -132,8 +138,18 @@ const raffleTicketSchema = new Schema<
       type: String,
       enum: Object.values(PaymentMethod),
     },
+    paymentProvider: {
+      type: String,
+      enum: Object.values(PaymentProvider),
+    },
+    paymentStatus: {
+      type: String,
+      enum: Object.values(PaymentTransactionStatus),
+    },
+    paymentTransactionId: String,
     paymentReference: String,
     paidAt: Date,
+    reservedUntil: Date,
     channel: {
       type: String,
       enum: Object.values(Channel),
@@ -181,6 +197,10 @@ raffleTicketSchema.pre("validate", async function () {
 
   if (this.status === TicketStatus.PAID && !this.paidAt) {
     this.paidAt = new Date();
+  }
+
+  if (this.status === TicketStatus.RESERVED && !this.reservedUntil) {
+    this.reservedUntil = new Date(Date.now() + DEFAULT_RESERVATION_MINUTES * 60 * 1000);
   }
 });
 
@@ -234,6 +254,13 @@ raffleTicketSchema.index({ raffle: 1, numbers: 1 });
 
 // Para el historial de rifas de un usuario filtrado por estado
 raffleTicketSchema.index({ user: 1, status: 1 });
+
+// Para reconciliar pagos externos y evitar referencias duplicadas
+raffleTicketSchema.index({ paymentReference: 1 }, { unique: true, sparse: true });
+
+// Para liberar reservas vencidas y consultar pagos por proveedor
+raffleTicketSchema.index({ status: 1, reservedUntil: 1 });
+raffleTicketSchema.index({ paymentProvider: 1, paymentTransactionId: 1 }, { sparse: true });
 
 // Para encontrar rápidamente el boleto ganador después del sorteo
 raffleTicketSchema.index({ raffle: 1, isWinner: 1 });

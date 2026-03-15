@@ -4,6 +4,7 @@ import RaffleNumber from "../models/raffle-number.model.ts";
 import RaffleTicket from "../models/raffle-ticket.model.ts";
 import User from "../models/user.model.ts";
 import { Channel, PaymentMethod, RaffleNumberStatus, RaffleStatus, TicketStatus, UserRole } from "../models/enums.ts";
+import { cleanupExpiredRaffleReservations } from "./wompi.service.ts";
 
 export interface ListRafflesParams {
   status?: string;
@@ -97,6 +98,7 @@ export async function listRafflesService(params: ListRafflesParams) {
 
 export async function getRaffleByIdService(id: string) {
   const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
 
   const raffle = await Raffle.findById(raffleId)
     .populate("winner", "name avatarUrl")
@@ -130,6 +132,7 @@ export async function getRaffleNumbersService(
   options: { status?: string; page: number; limit: number },
 ) {
   const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
   const raffle = await Raffle.findById(raffleId).select("_id totalTickets").lean();
 
   if (!raffle) {
@@ -163,6 +166,7 @@ export async function getRaffleNumbersService(
 
 export async function getAvailableRaffleNumbersService(id: string) {
   const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
   const raffle = await Raffle.findById(raffleId).select("_id totalTickets").lean();
 
   if (!raffle) {
@@ -184,6 +188,7 @@ export async function purchaseRaffleTicketsService(
   actor: ActorContext,
   params: PurchaseRaffleTicketsParams,
 ) {
+  await cleanupExpiredRaffleReservations(raffleId);
   const raffleObjectId = toObjectId(raffleId, "Raffle ID");
   const raffle = await Raffle.findById(raffleObjectId);
 
@@ -240,6 +245,7 @@ export async function purchaseRaffleTicketsService(
 
 export async function drawRaffleService(id: string) {
   const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
   const raffle = await Raffle.findById(raffleId);
 
   if (!raffle) {
