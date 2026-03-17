@@ -124,6 +124,7 @@ async function seedUsers(count: number = 5) {
       },
       name: faker.person.fullName(),
       phone: `+57${faker.number.int({min: 3000000000, max: 3999999999})}`,
+      identityDocument: faker.string.numeric({ length: 10 }),
       avatarUrl: faker.image.avatar(),
       source: faker.helpers.arrayElement(Object.values(UserSource)),
       status: faker.helpers.arrayElement(Object.values(UserStatus)),

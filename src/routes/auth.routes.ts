@@ -3,7 +3,7 @@
  *
  * Base: /api/auth
  *
- *   POST /register  → Crear cuenta web (email + password)
+ *   POST /register  → Crear cuenta web pública (email + password)
  *   POST /login     → Iniciar sesión → devuelve JWT
  *   POST /forgot-password → Solicitar recuperación de contraseña
  *   POST /reset-password  → Confirmar nueva contraseña con token

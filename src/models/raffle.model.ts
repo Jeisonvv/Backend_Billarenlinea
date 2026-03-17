@@ -52,6 +52,12 @@ export interface IRaffleDocument extends IRaffle, Document {
 
   // Virtual: true si ya se vendieron todos los boletos
   readonly isSoldOut: boolean;
+
+  // Virtual: true cuando la rifa no requiere pago por boleto
+  readonly isFree: boolean;
+
+  // Virtual: true cuando la rifa requiere pago por boleto
+  readonly requiresPayment: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +162,14 @@ raffleSchema.virtual("availableTickets").get(function (this: IRaffleDocument) {
 // true si ya no quedan boletos disponibles
 raffleSchema.virtual("isSoldOut").get(function (this: IRaffleDocument) {
   return this.soldTickets >= this.totalTickets;
+});
+
+raffleSchema.virtual("isFree").get(function (this: IRaffleDocument) {
+  return this.ticketPrice === 0;
+});
+
+raffleSchema.virtual("requiresPayment").get(function (this: IRaffleDocument) {
+  return this.ticketPrice > 0;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

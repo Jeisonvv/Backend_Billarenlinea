@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema } from "mongoose";
 import { Channel, PaymentMethod, PaymentProvider, PaymentTransactionStatus, RaffleNumberStatus, TicketStatus } from "./enums.ts";
 import Raffle from "./raffle.model.ts";
 import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.ts";
+import User from "./user.model.ts";
 
 const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
 
@@ -178,6 +179,46 @@ raffleTicketSchema.pre("validate", async function () {
 
   if (uniqueNumbers.size !== normalizedNumbers.length) {
     throw new Error("No puedes repetir números dentro de la misma compra.");
+  }
+
+  if (raffle.ticketPrice === 0) {
+    const participant = await User.findById(this.user)
+      .select("_id deletedAt identityDocument")
+      .lean();
+
+    if (!participant || participant.deletedAt) {
+      throw new Error("El usuario no existe.");
+    }
+
+    if (!participant.identityDocument) {
+      throw new Error("El usuario debe tener documento de identidad registrado para participar en rifas gratuitas.");
+    }
+
+    if (normalizedNumbers.length !== 1) {
+      throw new Error("En una rifa gratuita cada usuario solo puede obtener un número.");
+    }
+
+    if (this.status !== TicketStatus.PAID) {
+      throw new Error("Los boletos de rifas gratuitas deben confirmarse inmediatamente.");
+    }
+
+    const matchingUsers = await User.find({
+      identityDocument: participant.identityDocument,
+      deletedAt: { $exists: false },
+    })
+      .select("_id")
+      .lean();
+
+    const existingFreeTicket = await RaffleTicket.exists({
+      _id: { $ne: this._id },
+      raffle: this.raffle,
+      user: { $in: matchingUsers.map((entry) => entry._id) },
+      status: { $ne: TicketStatus.CANCELLED },
+    });
+
+    if (existingFreeTicket) {
+      throw new Error("Ya existe una participación para este documento de identidad en esta rifa gratuita.");
+    }
   }
 
   const availableCount = await RaffleNumber.countDocuments({

@@ -4,7 +4,7 @@ Esta guia documenta la integracion actual entre rifas, reservas de numeros y pag
 
 Complemento recomendado:
 
-- Ver tambien `WOMPI_FRONTEND_GUIDE.md` para la integracion del frontend con Widget o Checkout Web.
+- Ver tambien `WOMPI_FRONTEND_GUIDE.md` en esta misma carpeta para la integracion del frontend con Widget o Checkout Web.
 
 ## Resumen
 

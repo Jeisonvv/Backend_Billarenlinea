@@ -34,7 +34,7 @@ export async function getConversationStateByUserId(req: Request, res: Response) 
  */
 import type { Request, Response } from "express";
 import {
-  createUserService,
+  createAdminUserService,
   listUsersService,
   getUserByIdService,
   getUserByPhoneService,
@@ -43,6 +43,35 @@ import {
   getUserByProviderService,
   updateConversationStateService,
 } from "../services/user.service.ts";
+
+function getDuplicateUserMessage(field?: string) {
+  switch (field) {
+    case "identityDocument":
+      return "Este documento de identidad ya está registrado.";
+    case "phone":
+      return "Este teléfono ya está registrado.";
+    case "email":
+      return "Este email ya está registrado.";
+    default:
+      return "Este usuario ya existe. Usa el _id del jugador existente para no duplicarlo.";
+  }
+}
+
+function getDuplicateUserMessageFromMongo(error: any) {
+  if (error?.keyPattern?.identityDocument) {
+    return "Este documento de identidad ya está registrado.";
+  }
+
+  if (error?.keyPattern?.phone) {
+    return "Este teléfono ya está registrado.";
+  }
+
+  if (error?.keyPattern?.["webAuth.email"]) {
+    return "Este email ya está registrado.";
+  }
+
+  return "Este usuario ya existe. Usa el _id del jugador existente para no duplicarlo.";
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /users/by-provider/:provider/:providerId
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,26 +110,36 @@ export async function updateConversationState(req: Request, res: Response) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function createUser(req: Request, res: Response) {
   try {
-    const user = await createUserService(req.body);
-    res.status(201).json({ ok: true, data: user });
+    const result = await createAdminUserService(req.body);
+    res.status(201).json({
+      ok: true,
+      data: result.user,
+      ...(result.requiresPasswordSetup !== undefined && { requiresPasswordSetup: result.requiresPasswordSetup }),
+      ...(result.onboarding && { onboarding: result.onboarding }),
+    });
   } catch (error: any) {
-    // Duplicado detectado antes de insertar (chequeo previo)
+    if (error.message === "No se permite enviar passwordHash manualmente desde este endpoint. Usa activación temporal.") {
+      res.status(400).json({ ok: false, message: error.message });
+      return;
+    }
+
     if (error.message === "Este usuario ya existe.") {
       res.status(409).json({
         ok: false,
-        message: "Este usuario ya existe. Usa el _id del jugador existente para inscribirlo.",
+        message: getDuplicateUserMessage(error.duplicateField),
         existingUser: error.existingUser,
       });
       return;
     }
-    // Duplicado a nivel de índice de MongoDB (fallback — concurrencia)
+
     if (error.code === 11000) {
       res.status(409).json({
         ok: false,
-        message: "Este usuario ya existe. Busca al jugador con GET /api/users/by-phone/:phone y usa su _id.",
+        message: getDuplicateUserMessageFromMongo(error),
       });
       return;
     }
+
     res.status(400).json({ ok: false, message: error.message });
   }
 }
@@ -170,6 +209,20 @@ export async function updateUser(req: Request, res: Response) {
     const user = await updateUserService({ id, data: req.body });
     res.json({ ok: true, data: user });
   } catch (error: any) {
+    if (error.message === "Este usuario ya existe.") {
+      res.status(409).json({
+        ok: false,
+        message: getDuplicateUserMessage(error.duplicateField),
+        existingUser: error.existingUser,
+      });
+      return;
+    }
+
+    if (error.code === 11000) {
+      res.status(409).json({ ok: false, message: getDuplicateUserMessageFromMongo(error) });
+      return;
+    }
+
     const status = error.message === "Usuario no encontrado." ? 404 : 400;
     res.status(status).json({ ok: false, message: error.message });
   }

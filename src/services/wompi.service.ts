@@ -312,6 +312,10 @@ export async function createWompiCheckoutForRaffle(
     throw new Error("La rifa no está activa para recibir pagos.");
   }
 
+  if (raffle.ticketPrice === 0) {
+    throw new Error("La rifa es gratuita y no requiere checkout.");
+  }
+
   if (!params.numbers || params.numbers.length === 0) {
     throw new Error("Debes enviar al menos un número.");
   }
@@ -339,6 +343,11 @@ export async function createWompiCheckoutForRaffle(
   const paymentReference = generatePaymentReference(raffleId);
   const requestedNumbers = params.numbers.map((numberValue) => String(numberValue));
   const amountInCents = raffle.ticketPrice * requestedNumbers.length * 100;
+
+  if (amountInCents <= 0) {
+    throw new Error("El monto del checkout debe ser mayor a 0.");
+  }
+
   const redirectUrl = getWompiRedirectUrl();
   const integrity = buildIntegritySignature(paymentReference, amountInCents, "COP", expirationTime);
   const phoneData = splitPhone(user.phone ?? null);

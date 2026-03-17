@@ -64,10 +64,40 @@ function getPaymentMethod(inputMethod?: string) {
   return inputMethod as PaymentMethod;
 }
 
+function getTicketPriceValue(input: unknown) {
+  const ticketPrice = typeof input === "number" ? input : Number(input);
+
+  if (!Number.isFinite(ticketPrice) || ticketPrice < 0) {
+    throw new Error("ticketPrice inválido.");
+  }
+
+  return ticketPrice;
+}
+
+function normalizeRafflePricingData(data: Record<string, unknown>) {
+  const ticketPrice = getTicketPriceValue(data.ticketPrice);
+  const explicitIsFree = typeof data.isFree === "boolean" ? data.isFree : undefined;
+
+  if (explicitIsFree === true && ticketPrice > 0) {
+    throw new Error("Una rifa gratuita debe tener ticketPrice en 0.");
+  }
+
+  if (explicitIsFree === false && ticketPrice === 0) {
+    throw new Error("Una rifa con costo debe tener ticketPrice mayor a 0.");
+  }
+
+  return {
+    ...data,
+    ticketPrice,
+  };
+}
+
 export async function createRaffleService(data: Record<string, unknown>, createdBy: string) {
   const createdById = toObjectId(createdBy, "createdBy");
+  const normalizedData = normalizeRafflePricingData(data);
+
   return Raffle.create({
-    ...data,
+    ...normalizedData,
     createdBy: createdById,
     soldTickets: 0,
   });
@@ -210,16 +240,53 @@ export async function purchaseRaffleTicketsService(
   }
 
   const userObjectId = toObjectId(targetUserId, "User ID");
-  const user = await User.findById(userObjectId).select("_id deletedAt").lean();
+  const user = await User.findById(userObjectId).select("_id deletedAt identityDocument").lean();
   if (!user || user.deletedAt) {
     throw new Error("Usuario no encontrado.");
   }
 
-  const status = getTicketStatus(params.status as TicketStatus | undefined);
+  const raffleIsFree = raffle.ticketPrice === 0;
+  const requestedStatus = getTicketStatus(params.status as TicketStatus | undefined);
+  const status = raffleIsFree ? TicketStatus.PAID : requestedStatus;
   const channel = getPurchaseChannel(params.channel);
   const paymentMethod = getPaymentMethod(params.paymentMethod);
 
-  if (status === TicketStatus.PAID && actor.role === UserRole.CUSTOMER) {
+  if (raffleIsFree && params.numbers.length !== 1) {
+    throw new Error("En una rifa gratuita cada usuario solo puede obtener un número.");
+  }
+
+  if (raffleIsFree && params.status && requestedStatus !== TicketStatus.PAID) {
+    throw new Error("Las rifas gratuitas se confirman automáticamente y no admiten estado RESERVED.");
+  }
+
+  if (raffleIsFree && (paymentMethod || params.paymentReference)) {
+    throw new Error("La rifa es gratuita y no requiere datos de pago.");
+  }
+
+  if (raffleIsFree) {
+    if (!user.identityDocument) {
+      throw new Error("El usuario debe tener documento de identidad registrado para participar en rifas gratuitas.");
+    }
+
+    const matchingUsers = await User.find({
+      identityDocument: user.identityDocument,
+      deletedAt: { $exists: false },
+    })
+      .select("_id")
+      .lean();
+
+    const existingFreeTicket = await RaffleTicket.exists({
+      raffle: raffleObjectId,
+      user: { $in: matchingUsers.map((entry) => entry._id) },
+      status: { $ne: TicketStatus.CANCELLED },
+    });
+
+    if (existingFreeTicket) {
+      throw new Error("Ya existe una participación para este documento de identidad en esta rifa gratuita.");
+    }
+  }
+
+  if (!raffleIsFree && status === TicketStatus.PAID && actor.role === UserRole.CUSTOMER) {
     throw new Error("Un cliente no puede marcar una compra como pagada desde este endpoint.");
   }
 

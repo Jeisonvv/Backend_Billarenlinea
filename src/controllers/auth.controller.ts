@@ -12,9 +12,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createHash, randomBytes } from "node:crypto";
 import User from "../models/user.model.ts";
-import { UserRole, Channel, UserStatus } from "../models/enums.ts";
 import RevokedToken from "../models/revoked-token.model.ts";
 import { isMailConfigured, sendPasswordResetEmail } from "../services/mail.service.ts";
+import { createWebUserService } from "../services/user.service.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/logout
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,60 +85,47 @@ function buildPasswordResetUrl(token: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function register(req: Request, res: Response) {
   try {
-    const { name, email, password, phone } = req.body as {
+    const user = await createWebUserService(req.body as {
       name?: string;
       email?: string;
       password?: string;
       phone?: string;
-    };
-
-    if (!name || !email || !password) {
-      res.status(400).json({ ok: false, message: "name, email y password son obligatorios." });
-      return;
-    }
-
-    if (password.length < 8) {
-      res.status(400).json({ ok: false, message: "La contraseña debe tener al menos 8 caracteres." });
-      return;
-    }
-
-    // Verificar si el email ya está registrado
-    const normalizedEmail = normalizeEmail(email);
-    const existing = await User.findOne({ "webAuth.email": normalizedEmail });
-    if (existing) {
-      res.status(409).json({ ok: false, message: "Este email ya está registrado." });
-      return;
-    }
-
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const createData: Record<string, unknown> = {
-      name: name.trim(),
-      status: UserStatus.NEW,
-      role: UserRole.CUSTOMER,           // rol por defecto: cliente
-      identities: [{ provider: Channel.WEB, providerId: normalizedEmail }],
-      webAuth: {
-        email: normalizedEmail,
-        passwordHash,
-        emailVerified: false,
-      },
-    };
-    if (phone?.trim()) createData.phone = phone.trim();
-
-    const user = await User.create(createData);
+      identityDocument?: string;
+    });
 
     res.status(201).json({
       ok: true,
       data: {
         id: user._id,
         name: user.name,
-        email: normalizedEmail,
+        email: user.webAuth?.email,
+        identityDocument: user.identityDocument,
         role: user.role,
       },
     });
   } catch (error: any) {
+    if (
+      error.message === "name, email y password son obligatorios."
+      || error.message === "La contraseña debe tener al menos 8 caracteres."
+      || error.message === "El documento de identidad es inválido."
+    ) {
+      res.status(400).json({ ok: false, message: error.message });
+      return;
+    }
+
+    if (error.message === "Este usuario ya existe.") {
+      const message = error.duplicateField === "identityDocument"
+        ? "Este documento de identidad ya está registrado."
+        : "Este email ya está registrado.";
+      res.status(409).json({ ok: false, message });
+      return;
+    }
+
     if (error.code === 11000) {
-      res.status(409).json({ ok: false, message: "Este email ya está registrado." });
+      const message = error.keyPattern?.identityDocument
+        ? "Este documento de identidad ya está registrado."
+        : "Este email ya está registrado.";
+      res.status(409).json({ ok: false, message });
       return;
     }
     res.status(500).json({ ok: false, message: error.message });

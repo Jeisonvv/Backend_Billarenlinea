@@ -10,6 +10,7 @@
     "start": "npx tsx src/app.ts",
     "dev": "nodemon --watch src --ext ts --exec \"npx tsx src/app.ts\"",
     "build": "tsc",
+    "db:clear": "node scripts/clear-database.mjs",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed": "npx tsx src/utils/seedData.ts",
     "seed:watch": "nodemon --watch src/utils/seedData.ts --ext ts --exec \"npx tsx src/utils/seedData.ts\"",

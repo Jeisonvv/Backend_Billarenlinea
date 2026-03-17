@@ -126,6 +126,7 @@ export interface IUser {
   // Datos básicos del perfil
   name?: string;
   phone?: string;     // Número de teléfono (String para incluir código de país: +57...)
+  identityDocument?: string; // Documento de identidad normalizado para evitar cuentas duplicadas
   avatarUrl?: string; // URL de la foto de perfil
 
   // CRM: datos para seguimiento comercial
@@ -191,6 +192,17 @@ export interface IUserModel extends Model<IUserDocument> {
     providerId: string,
   ): Promise<IUserDocument | null>;
   findByEmail(email: string): Promise<IUserDocument | null>;
+}
+
+export function normalizeIdentityDocument(value?: string | null) {
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, "");
+
+  return normalized || undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -326,6 +338,14 @@ const userSchema = new Schema<IUserDocument, IUserModel>(
 
     name: { type: String, trim: true },
     phone: { type: String, trim: true },
+    identityDocument: {
+      type: String,
+      set: normalizeIdentityDocument,
+      validate: {
+        validator: (value?: string) => value === undefined || value.length >= 5,
+        message: "El documento de identidad debe tener al menos 5 caracteres válidos.",
+      },
+    },
     avatarUrl: String,
 
     source: {
@@ -412,6 +432,18 @@ userSchema.index(
 
 // Índice para buscar por email web. unique + sparse = único pero opcional.
 userSchema.index({ "webAuth.email": 1 }, { unique: true, sparse: true });
+
+// Documento de identidad único entre usuarios activos.
+userSchema.index(
+  { identityDocument: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      deletedAt: { $exists: false },
+      identityDocument: { $type: "string" },
+    },
+  },
+);
 
 // Índice para filtros de CRM (ej: "dame todos los usuarios nuevos de WhatsApp")
 userSchema.index({ status: 1, source: 1 });
@@ -616,6 +648,8 @@ userSchema.pre<IUserDocument>("save", async function () {
   if (this.webAuth?.email) {
     this.webAuth.email = this.webAuth.email.toLowerCase().trim();
   }
+
+  this.set("identityDocument", normalizeIdentityDocument(this.identityDocument));
 });
 // ─────────────────────────────────────────────────────────────────────────────
 // CREACIÓN Y EXPORTACIÓN DEL MODELO

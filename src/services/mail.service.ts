@@ -34,6 +34,13 @@ interface SendPasswordResetEmailParams {
   expiresAt: Date;
 }
 
+interface SendAccountSetupEmailParams {
+  to: string;
+  name?: string | undefined;
+  setupUrl: string;
+  expiresAt: Date;
+}
+
 export async function sendPasswordResetEmail(params: SendPasswordResetEmailParams) {
   const transporter = getTransporter();
   const expirationText = new Intl.DateTimeFormat("es-CO", {
@@ -68,6 +75,46 @@ export async function sendPasswordResetEmail(params: SendPasswordResetEmailParam
         <p><a href="${params.resetUrl}">${params.resetUrl}</a></p>
         <p>Este enlace vence el ${expirationText}.</p>
         <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendAccountSetupEmail(params: SendAccountSetupEmailParams) {
+  const transporter = getTransporter();
+  const expirationText = new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(params.expiresAt);
+
+  const recipientName = params.name?.trim() || "Hola";
+
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: params.to,
+    subject: "Activa tu cuenta",
+    text:
+      `${recipientName},\n\n` +
+      "Creamos una cuenta para ti en Billar en Línea.\n" +
+      `Abre este enlace para definir tu contraseña: ${params.setupUrl}\n\n` +
+      `Este enlace vence el ${expirationText}.\n\n` +
+      "Si no esperabas este mensaje, puedes ignorarlo y contactarnos.",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 560px; margin: 0 auto;">
+        <h2 style="margin-bottom: 16px; color: #111827;">Activa tu cuenta</h2>
+        <p>${recipientName},</p>
+        <p>Creamos una cuenta para ti en Billar en Línea.</p>
+        <p>Usa este enlace para definir tu contraseña y activar el acceso:</p>
+        <p style="margin: 24px 0;">
+          <a
+            href="${params.setupUrl}"
+            style="display: inline-block; padding: 12px 20px; background: #111827; color: #ffffff; text-decoration: none; border-radius: 8px;"
+          >Definir contraseña</a>
+        </p>
+        <p>Si el botón no abre, copia y pega este enlace en tu navegador:</p>
+        <p><a href="${params.setupUrl}">${params.setupUrl}</a></p>
+        <p>Este enlace vence el ${expirationText}.</p>
+        <p>Si no esperabas este mensaje, puedes ignorarlo y contactarnos.</p>
       </div>
     `,
   });
