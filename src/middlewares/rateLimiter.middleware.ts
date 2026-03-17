@@ -14,7 +14,18 @@ import dotenv from "dotenv";
 dotenv.config();
 import type { NextFunction, Request, Response  } from "express";
 
-const BOT_JWT_TOKEN = process.env.BOT_JWT_TOKEN;
+const BOT_API_KEY = process.env.BOT_API_KEY?.trim();
+
+function isBotRequest(req: Request) {
+  const botTokenHeader = req.headers["x-bot-token"];
+  const botToken = Array.isArray(botTokenHeader) ? botTokenHeader[0] : botTokenHeader;
+
+  if (!BOT_API_KEY || typeof botToken !== "string") {
+    return false;
+  }
+
+  return botToken.trim() === BOT_API_KEY;
+}
 
 // ── Limitador general ─────────────────────────────────────────────────────────
 
@@ -31,17 +42,11 @@ const limiterInstance = rateLimit({
 
 
 export const generalLimiter = (req: Request, res: Response, next: NextFunction) => {
-  // Si la petición tiene el JWT del bot, no aplicar rate limit
-  const auth = req.headers["authorization"];
-  if (auth && typeof auth === "string") {
-    const token = auth.replace("Bearer ", "");
-    if (token === BOT_JWT_TOKEN) {
-      return next();
-    } else {
-      console.log("[RateLimit] Token recibido:", token);
-      console.log("[RateLimit] Token esperado:", BOT_JWT_TOKEN);
-    }
+  // Si la petición trae la clave técnica del bot, no aplicar rate limit.
+  if (isBotRequest(req)) {
+    return next();
   }
+
   return limiterInstance(req, res, next);
 };
 
@@ -60,16 +65,10 @@ const authLimiterInstance = rateLimit({
 });
 
 export const authLimiter = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers["authorization"];
-  if (authHeader && typeof authHeader === "string") {
-    const token = authHeader.replace("Bearer ", "");
-    if (token === BOT_JWT_TOKEN) {
-      return next();
-    } else {
-      console.log("[RateLimit-Auth] Token recibido:", token);
-      console.log("[RateLimit-Auth] Token esperado:", BOT_JWT_TOKEN);
-    }
+  if (isBotRequest(req)) {
+    return next();
   }
+
   return authLimiterInstance(req, res, next);
 };
 
