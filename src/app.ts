@@ -23,6 +23,7 @@ import { connectDB } from './db/connection.ts';
 import tournamentRoutes from './routes/tournament.routes.ts';
 import matchRoutes from './routes/match.routes.ts';
 import userRoutes from './routes/user.routes.ts';
+import leadSessionRoutes from './routes/lead-session.routes.ts';
 import authRoutes from './routes/auth.routes.ts';
 import transmissionRoutes from './routes/transmission.routes.ts';
 import raffleRoutes from './routes/raffle.routes.ts';
@@ -85,6 +86,7 @@ app.get('/', (_req: Request, res: Response) => {
 
 app.use('/api/auth',        authRoutes);       // Login y registro
 app.use('/api/users',       userRoutes);       // CRUD de usuarios
+app.use('/api/lead-sessions', leadSessionRoutes); // Sesiones temporales del bot
 app.use('/api/tournaments', tournamentRoutes); // Torneos, grupos y brackets
 app.use('/api/matches',     matchRoutes);      // Partidos y resultados
 app.use('/api/transmissions', transmissionRoutes); // Transmisiones en vivo/eventos

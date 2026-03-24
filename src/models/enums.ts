@@ -44,6 +44,16 @@ export enum UserStatus {
   CHURNED = "CHURNED",       // Era cliente pero se fue / dejó de responder
 }
 
+// ── Estado de una sesión temporal de lead ───────────────────────────────────
+// Permite separar la conversación del bot del usuario persistido en CRM.
+export enum LeadSessionStatus {
+  ACTIVE = "ACTIVE",
+  QUALIFIED = "QUALIFIED",
+  PROMOTED = "PROMOTED",
+  ABANDONED = "ABANDONED",
+  EXPIRED = "EXPIRED",
+}
+
 // ── Categoría de jugador ──────────────────────────────────────────────────────
 // Nivel competitivo del jugador de billar.
 // Se usa para filtrar en qué torneos puede participar cada jugador.
