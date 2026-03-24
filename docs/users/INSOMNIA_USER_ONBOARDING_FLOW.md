@@ -50,7 +50,6 @@ http://localhost:3000/api
 ```json
 {
   "ok": true,
-  "token": "jwt_aqui",
   "user": {
     "id": "...",
     "name": "Administrador",
@@ -62,7 +61,7 @@ http://localhost:3000/api
 
 #### Qué hacer con esta respuesta
 
-Copia el valor de `token` porque lo usarás en la creación del usuario.
+Insomnia debe guardar la cookie de sesión que llega en el header `Set-Cookie`. Si tienes activado el cookie jar, las siguientes peticiones autenticadas la enviarán automáticamente.
 
 ### 2. Crear usuario desde el endpoint administrativo
 
@@ -70,12 +69,7 @@ Copia el valor de `token` porque lo usarás en la creación del usuario.
 
 - Método: `POST`
 - URL: `/users`
-- Headers:
-
-```text
-Authorization: Bearer TU_TOKEN
-Content-Type: application/json
-```
+- Header obligatorio: `Content-Type: application/json`
 
 - Body JSON:
 
@@ -174,7 +168,6 @@ Si estás en desarrollo y no tienes SMTP configurado, el backend puede devolver 
 ```json
 {
   "ok": true,
-  "token": "jwt_del_usuario",
   "user": {
     "id": "...",
     "name": "Juan David Perez",
@@ -184,7 +177,7 @@ Si estás en desarrollo y no tienes SMTP configurado, el backend puede devolver 
 }
 ```
 
-Si este login funciona, el flujo quedó validado de punta a punta.
+Si este login funciona y la cookie queda guardada en Insomnia, el flujo quedó validado de punta a punta.
 
 ## Qué valida este flujo
 

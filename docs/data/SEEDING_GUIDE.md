@@ -238,7 +238,6 @@ Content-Type: application/json
 ```json
 {
   "ok": true,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": "65f...",
     "name": "Juan Pérez",
@@ -248,18 +247,29 @@ Content-Type: application/json
 }
 ```
 
+Además del JSON, el backend envía el JWT en una cookie `httpOnly` para evitar exponerlo en el body o en `localStorage`.
+
 ---
 
 ### Usar el token en peticiones protegidas
 
-Incluye el token en el header `Authorization` de cada petición a rutas protegidas:
+Desde frontend web, envía las peticiones con credenciales para que el navegador adjunte la cookie automáticamente:
+
+```js
+fetch("http://localhost:3000/api/users", {
+  method: "GET",
+  credentials: "include",
+});
+```
+
+Para clientes no basados en navegador, el backend sigue aceptando el header `Authorization`:
 
 ```http
 GET /api/users
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-El token expira en **8 horas**. Al expirar, el cliente debe hacer login nuevamente.
+El token expira en **30 días**. Al expirar, el cliente debe hacer login nuevamente.
 
 ---
 
@@ -270,7 +280,37 @@ El token expira en **8 horas**. Al expirar, el cliente debe hacer login nuevamen
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
 | `POST` | `/api/auth/register` | ❌ Público | Crea cuenta web con email y contraseña |
-| `POST` | `/api/auth/login` | ❌ Público | Inicia sesión, devuelve JWT |
+| `POST` | `/api/auth/login` | ❌ Público | Inicia sesión y guarda JWT en cookie httpOnly |
+| `POST` | `/api/auth/bot-login` | Header `X-Bot-Token` | Login técnico para el bot, devuelve JWT en body |
+
+### Login técnico del bot
+
+Este endpoint existe para clientes server-to-server que no manejan cookie jar automáticamente. Requiere el header `X-Bot-Token` con el valor de `BOT_API_KEY`.
+
+```http
+POST /api/auth/bot-login
+Content-Type: application/json
+X-Bot-Token: TU_BOT_API_KEY
+
+{
+  "email": "bot@ejemplo.com",
+  "password": "TuClaveSegura123"
+}
+```
+
+**Respuesta `200`:**
+```json
+{
+  "ok": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "65f...",
+    "name": "Bot Service",
+    "email": "bot@ejemplo.com",
+    "role": "STAFF"
+  }
+}
+```
 
 ---
 

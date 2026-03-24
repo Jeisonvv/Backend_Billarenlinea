@@ -12,6 +12,7 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { UserRole } from "../models/enums.ts";
 import RevokedToken from "../models/revoked-token.model.ts";
+import { extractAuthToken } from "../utils/auth-token.ts";
 
 interface JwtPayload {
   sub: string;
@@ -22,12 +23,12 @@ interface JwtPayload {
 // requireAuth — falla con 401 si no hay token o es inválido
 // ─────────────────────────────────────────────────────────────────────────────
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
+  const token = extractAuthToken(req);
+  if (!token) {
     res.status(401).json({ ok: false, message: "Token de autenticación requerido." });
     return;
   }
-  const token = authHeader.slice(7);
+
   // Verificar si el token está revocado
   const revoked = await RevokedToken.findOne({ token });
   if (revoked) {

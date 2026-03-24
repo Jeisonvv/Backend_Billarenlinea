@@ -7,6 +7,7 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 - users/: documentacion de registro, usuarios y pruebas de onboarding.
 - payments/: documentacion de pagos e integracion con Wompi.
 - data/: guias de seeding y verificacion de datos.
+- bot/: documentacion de integracion tecnica del bot con el backend.
 
 ## Archivos
 
@@ -23,3 +24,7 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 ### data
 
 - data/SEEDING_GUIDE.md: guia para poblar y verificar datos de prueba.
+
+### bot
+
+- bot/BOT_INTEGRATION_GUIDE.md: autenticacion, variables, endpoints y troubleshooting del bot.

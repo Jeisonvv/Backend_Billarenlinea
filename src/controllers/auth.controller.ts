@@ -3,7 +3,8 @@
  *
  * Endpoints:
  *   POST /api/auth/register  → Crea un usuario con credenciales web (email + password)
- *   POST /api/auth/login     → Valida credenciales y devuelve un JWT
+ *   POST /api/auth/login     → Valida credenciales y guarda un JWT en cookie httpOnly
+ *   POST /api/auth/bot-login → Valida credenciales del bot y devuelve JWT en body
  *   POST /api/auth/forgot-password → Genera token temporal para recuperar contraseña
  *   POST /api/auth/reset-password  → Cambia la contraseña usando el token temporal
  */
@@ -15,25 +16,33 @@ import User from "../models/user.model.ts";
 import RevokedToken from "../models/revoked-token.model.ts";
 import { isMailConfigured, sendPasswordResetEmail } from "../services/mail.service.ts";
 import { createWebUserService } from "../services/user.service.ts";
+import { clearAuthCookie, extractAuthToken, setAuthCookie } from "../utils/auth-token.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/logout
 // ─────────────────────────────────────────────────────────────────────────────
 export async function logout(req: Request, res: Response) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ ok: false, message: "Token de autenticación requerido." });
-  }
-  const token = authHeader.slice(7);
-  try {
-    // Decodificar el token para obtener la expiración
-    const decoded: any = jwt.decode(token);
-    if (!decoded || !decoded.exp) {
-      return res.status(400).json({ ok: false, message: "Token inválido." });
-    }
-    const expiresAt = new Date(decoded.exp * 1000);
-    await RevokedToken.create({ token, expiresAt });
+  const token = extractAuthToken(req);
+  clearAuthCookie(res);
+
+  if (!token) {
     return res.json({ ok: true, message: "Sesión cerrada correctamente." });
-  } catch (err) {
+  }
+
+  try {
+    const decoded = jwt.decode(token) as jwt.JwtPayload | null;
+    if (!decoded?.exp) {
+      return res.json({ ok: true, message: "Sesión cerrada correctamente." });
+    }
+
+    await RevokedToken.updateOne(
+      { token },
+      { $setOnInsert: { token, expiresAt: new Date(decoded.exp * 1000) } },
+      { upsert: true },
+    );
+
+    return res.json({ ok: true, message: "Sesión cerrada correctamente." });
+  } catch {
     return res.status(500).json({ ok: false, message: "Error al cerrar sesión." });
   }
 }
@@ -44,6 +53,79 @@ const RESET_TOKEN_EXPIRY_MS = 1000 * 60 * 60;
 
 function normalizeEmail(email: string) {
   return email.toLowerCase().trim();
+}
+
+function getBotApiKey() {
+  return process.env.BOT_API_KEY?.trim();
+}
+
+function getBotTokenHeader(req: Request) {
+  const botTokenHeader = req.headers["x-bot-token"];
+  return Array.isArray(botTokenHeader) ? botTokenHeader[0] : botTokenHeader;
+}
+
+function isAuthorizedBotRequest(req: Request) {
+  const botApiKey = getBotApiKey();
+  const botToken = getBotTokenHeader(req);
+
+  if (!botApiKey || typeof botToken !== "string") {
+    return false;
+  }
+
+  return botToken.trim() === botApiKey;
+}
+
+async function authenticateWebCredentials(email: string, password: string) {
+  const normalizedEmail = normalizeEmail(email);
+  const user = await User.findOne({
+    "webAuth.email": normalizedEmail,
+    deletedAt: { $exists: false },
+  }).select("+webAuth.passwordHash");
+
+  const invalidMessage = "Credenciales inválidas.";
+
+  if (!user || !user.webAuth?.passwordHash) {
+    return { error: invalidMessage } as const;
+  }
+
+  const passwordMatch = await bcrypt.compare(password, user.webAuth.passwordHash);
+  if (!passwordMatch) {
+    return { error: invalidMessage } as const;
+  }
+
+  return { user } as const;
+}
+
+function signAuthToken(user: { _id: { toString(): string }; role: unknown }) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    return { ok: false, error: "Error de configuración del servidor.", status: 500 } as const;
+  }
+
+  const token = jwt.sign(
+    { sub: user._id.toString(), role: user.role },
+    secret,
+    { expiresIn: TOKEN_EXPIRY },
+  );
+
+  return { ok: true, token } as const;
+}
+
+function buildAuthenticatedUserPayload(user: {
+  _id?: unknown;
+  name?: string;
+  webAuth?: { email?: string | undefined } | undefined;
+  role?: unknown;
+}) {
+  return {
+    ok: true,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.webAuth?.email,
+      role: user.role,
+    },
+  };
 }
 
 function hashResetToken(token: string) {
@@ -144,52 +226,49 @@ export async function login(req: Request, res: Response) {
       return;
     }
 
-    // Buscar usuario y TRAER el hash (normalmente excluido)
-    const normalizedEmail = normalizeEmail(email);
-    const user = await User.findOne({
-      "webAuth.email": normalizedEmail,
-      deletedAt: { $exists: false },
-    }).select("+webAuth.passwordHash");
-
-    // Mensaje genérico para no revelar si el email existe o no
-    const INVALID_MSG = "Credenciales inválidas.";
-
-    if (!user || !user.webAuth?.passwordHash) {
-      res.status(401).json({ ok: false, message: INVALID_MSG });
+    const authResult = await authenticateWebCredentials(email, password);
+    if ("error" in authResult) {
+      res.status(401).json({ ok: false, message: authResult.error });
       return;
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.webAuth.passwordHash);
-    if (!passwordMatch) {
-      res.status(401).json({ ok: false, message: INVALID_MSG });
+    const signedToken = signAuthToken(authResult.user);
+    if (!signedToken.ok) {
+      res.status(signedToken.status).json({ ok: false, message: signedToken.error });
       return;
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      res.status(500).json({ ok: false, message: "Error de configuración del servidor." });
+    if (isAuthorizedBotRequest(req)) {
+      res.json({
+        ...buildAuthenticatedUserPayload(authResult.user),
+        token: signedToken.token,
+      });
       return;
     }
 
-    const token = jwt.sign(
-      { sub: user._id.toString(), role: user.role },
-      secret,
-      { expiresIn: TOKEN_EXPIRY },
-    );
+    setAuthCookie(res, signedToken.token);
 
-    res.json({
-      ok: true,
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.webAuth.email,
-        role: user.role,
-      },
-    });
+    res.json(buildAuthenticatedUserPayload(authResult.user));
   } catch (error: any) {
     res.status(500).json({ ok: false, message: error.message });
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/auth/bot-login
+// ─────────────────────────────────────────────────────────────────────────────
+export async function botLogin(req: Request, res: Response) {
+  if (!getBotApiKey()) {
+    res.status(500).json({ ok: false, message: "BOT_API_KEY no está configurado en el servidor." });
+    return;
+  }
+
+  if (!isAuthorizedBotRequest(req)) {
+    res.status(403).json({ ok: false, message: "Acceso restringido al bot." });
+    return;
+  }
+
+  await login(req, res);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
