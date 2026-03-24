@@ -2,7 +2,7 @@ import LeadSession, {
   type ILeadSessionData,
   type ILeadSessionDocument,
 } from "../models/lead-session.model.ts";
-import User from "../models/user.model.ts";
+import User, { normalizeIdentityDocument } from "../models/user.model.ts";
 import {
   Channel,
   LeadSessionStatus,
@@ -20,6 +20,7 @@ interface EnsureLeadSessionParams {
   stateData?: Record<string, unknown>;
   leadData?: Partial<Record<keyof ILeadSessionData, unknown>>;
   qualified?: boolean;
+  persistedUserId?: string;
 }
 
 interface UpdateLeadSessionStateParams {
@@ -72,6 +73,12 @@ function sanitizeOptionalString(value: unknown) {
   return sanitized || undefined;
 }
 
+function normalizeEmail(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const sanitized = value.trim().toLowerCase();
+  return sanitized || undefined;
+}
+
 function normalizeInterestType(value: unknown): InterestType | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
@@ -94,6 +101,20 @@ function normalizeLeadData(
   const phone = sanitizeOptionalString(leadData.phone);
   if (phone !== undefined) normalized.phone = phone;
 
+  const email = normalizeEmail(leadData.email);
+  if (email !== undefined) normalized.email = email;
+
+  if (leadData.identityDocument !== undefined) {
+    const identityDocument = normalizeIdentityDocument(leadData.identityDocument as string | undefined);
+    if ((leadData.identityDocument as string | undefined) && !identityDocument) {
+      throw new Error("identityDocument inválido.");
+    }
+
+    if (identityDocument !== undefined) {
+      normalized.identityDocument = identityDocument;
+    }
+  }
+
   const city = sanitizeOptionalString(leadData.city);
   if (city !== undefined) normalized.city = city;
 
@@ -115,9 +136,53 @@ function normalizeLeadData(
 }
 
 function getLeadDataSnapshot(session: ILeadSessionDocument): ILeadSessionData {
-  return {
-    ...(session.leadData ?? {}),
+  const rawLeadData = session.leadData as ILeadSessionData & {
+    toObject?: () => ILeadSessionData;
   };
+
+  if (!rawLeadData) {
+    return {};
+  }
+
+  if (typeof rawLeadData.toObject === "function") {
+    return rawLeadData.toObject();
+  }
+
+  return {
+    ...rawLeadData,
+  };
+}
+
+function getStateDataSnapshot(session: ILeadSessionDocument): Record<string, unknown> {
+  const rawStateData = session.stateData as unknown as
+    | Map<string, unknown>
+    | (Record<string, unknown> & {
+        toObject?: () => Record<string, unknown>;
+      });
+
+  if (!rawStateData) {
+    return {};
+  }
+
+  if (rawStateData instanceof Map) {
+    return Object.fromEntries(rawStateData.entries());
+  }
+
+  if (typeof rawStateData.toObject === "function") {
+    return rawStateData.toObject();
+  }
+
+  return {
+    ...rawStateData,
+  };
+}
+
+function syncSessionStateToUser(user: any, session: ILeadSessionDocument) {
+  const conversationState = user.getConversationState(session.channel);
+
+  conversationState.currentState = session.currentState || "IDLE";
+  conversationState.stateData = new Map(Object.entries(getStateDataSnapshot(session)));
+  conversationState.lastActivityAt = session.lastSeenAt || new Date();
 }
 
 function channelToUserSource(channel: Channel): UserSource {
@@ -195,6 +260,10 @@ export async function ensureLeadSessionService(params: EnsureLeadSessionParams) 
     session.status = params.qualified ? LeadSessionStatus.QUALIFIED : session.status;
   }
 
+  if (typeof params.persistedUserId === "string" && params.persistedUserId.trim()) {
+    session.persistedUserId = params.persistedUserId.trim() as any;
+  }
+
   touchSession(session);
   await session.save();
 
@@ -224,6 +293,17 @@ export async function upsertLeadSessionStateService(
   session.currentState = params.currentState.trim();
   session.stateData = new Map(Object.entries(params.stateData ?? {}));
   touchSession(session);
+
+  if (session.persistedUserId) {
+    const linkedUser = await User.findById(session.persistedUserId);
+    if (linkedUser) {
+      syncSessionStateToUser(linkedUser, session);
+      linkedUser.lastInteractionAt = session.lastSeenAt;
+      linkedUser.lastInteractionChannel = session.channel;
+      await linkedUser.save();
+    }
+  }
+
   await session.save();
 
   return session.toObject();
@@ -273,6 +353,7 @@ function buildCreateUserPayload(session: ILeadSessionDocument) {
     role: UserRole.CUSTOMER,
     ...(leadData.name && { name: leadData.name }),
     ...(leadData.phone && { phone: leadData.phone }),
+    ...(leadData.identityDocument && { identityDocument: leadData.identityDocument }),
     lastInteractionAt: now,
     lastInteractionChannel: session.channel,
     ...(interestType && {
@@ -283,22 +364,33 @@ function buildCreateUserPayload(session: ILeadSessionDocument) {
         channel: session.channel,
       }],
     }),
+    conversationStates: [{
+      channel: session.channel,
+      currentState: session.currentState || "IDLE",
+      stateData: getStateDataSnapshot(session),
+      lastActivityAt: session.lastSeenAt || now,
+    }],
   };
 }
 
 async function applySessionDataToUser(user: any, session: ILeadSessionDocument) {
   const leadData = getLeadDataSnapshot(session);
 
-  if (leadData.name) {
+  if (leadData.name && !user.name) {
     user.name = leadData.name;
   }
 
-  if (leadData.phone) {
+  if (leadData.phone && !user.phone) {
     user.phone = leadData.phone;
+  }
+
+  if (leadData.identityDocument && !user.identityDocument) {
+    user.identityDocument = leadData.identityDocument;
   }
 
   user.lastInteractionAt = new Date();
   user.lastInteractionChannel = session.channel;
+  syncSessionStateToUser(user, session);
 
   const hasIdentity = user.identities?.some(
     (identity: { provider?: string; providerId?: string }) => (
@@ -321,6 +413,57 @@ async function applySessionDataToUser(user: any, session: ILeadSessionDocument) 
   await user.save();
 }
 
+async function findUserForSessionReconciliation(session: ILeadSessionDocument) {
+  if (session.persistedUserId) {
+    const linkedUser = await User.findById(session.persistedUserId);
+    if (linkedUser) {
+      return linkedUser;
+    }
+  }
+
+  const identityMatch = await User.findByIdentity(session.channel, session.providerId);
+  if (identityMatch) {
+    return identityMatch;
+  }
+
+  const leadData = getLeadDataSnapshot(session);
+
+  if (leadData.identityDocument) {
+    const identityDocumentMatch = await User.findOne({
+      identityDocument: leadData.identityDocument,
+      deletedAt: { $exists: false },
+    });
+
+    if (identityDocumentMatch) {
+      return identityDocumentMatch;
+    }
+  }
+
+  if (leadData.email) {
+    const emailMatch = await User.findOne({
+      "webAuth.email": leadData.email,
+      deletedAt: { $exists: false },
+    });
+
+    if (emailMatch) {
+      return emailMatch;
+    }
+  }
+
+  if (leadData.phone) {
+    const phoneMatch = await User.findOne({
+      phone: leadData.phone,
+      deletedAt: { $exists: false },
+    });
+
+    if (phoneMatch) {
+      return phoneMatch;
+    }
+  }
+
+  return null;
+}
+
 export async function promoteLeadSessionService(channelParam: string, providerIdParam: string) {
   const channel = normalizeChannel(channelParam);
   const providerId = normalizeProviderId(providerIdParam);
@@ -330,9 +473,7 @@ export async function promoteLeadSessionService(channelParam: string, providerId
     throw new Error("Sesión temporal no encontrada.");
   }
 
-  const existingUser = session.persistedUserId
-    ? await User.findById(session.persistedUserId)
-    : await User.findByIdentity(channel, providerId);
+  const existingUser = await findUserForSessionReconciliation(session);
 
   let user;
 

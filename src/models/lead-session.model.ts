@@ -9,6 +9,8 @@ import { Channel, InterestType, LeadSessionStatus } from "./enums.ts";
 export interface ILeadSessionData {
   name?: string;
   phone?: string;
+  email?: string;
+  identityDocument?: string;
   city?: string;
   businessName?: string;
   interestType?: InterestType;
@@ -44,6 +46,8 @@ const leadDataSchema = new Schema<ILeadSessionData>(
   {
     name: { type: String, trim: true },
     phone: { type: String, trim: true },
+    email: { type: String, trim: true, lowercase: true },
+    identityDocument: { type: String, trim: true },
     city: { type: String, trim: true },
     businessName: { type: String, trim: true },
     interestType: {
