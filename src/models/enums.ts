@@ -137,6 +137,53 @@ export enum TournamentFormat {
   SWISS = "SWISS",                           // Sistema suizo: común en billar y ajedrez
 }
 
+// ── Tipos de evento ──────────────────────────────────────────────────────────
+// Qué clase de evento es dentro del calendario competitivo/comercial.
+export enum EventType {
+  CUP = "CUP",
+  MASTER = "MASTER",
+  CHAMPIONSHIP = "CHAMPIONSHIP",
+  OPEN = "OPEN",
+  EXHIBITION = "EXHIBITION",
+  OTHER = "OTHER",
+}
+
+// ── Nivel del evento ─────────────────────────────────────────────────────────
+// Alcance competitivo o territorial del evento.
+export enum EventTier {
+  WORLD = "WORLD",
+  INTERNATIONAL = "INTERNATIONAL",
+  NATIONAL = "NATIONAL",
+  DEPARTMENTAL = "DEPARTMENTAL",
+  REGIONAL = "REGIONAL",
+  LOCAL = "LOCAL",
+}
+
+// ── Estados del evento ───────────────────────────────────────────────────────
+// Ciclo de vida de un evento publicado en el calendario.
+export enum EventStatus {
+  SCHEDULED = "SCHEDULED",
+  LIVE = "LIVE",
+  FINISHED = "FINISHED",
+  CANCELLED = "CANCELLED",
+}
+
+// ── Modo de inscripción del evento ──────────────────────────────────────────
+// Define si el backend solo informa o si el negocio gestiona la inscripción.
+export enum EventRegistrationMode {
+  NONE = "NONE",
+  EXTERNAL_LINK = "EXTERNAL_LINK",
+  INTERNAL = "INTERNAL",
+}
+
+// ── Modo de boletería del evento ─────────────────────────────────────────────
+// Define si el evento solo muestra info o si el negocio vende las boletas.
+export enum EventTicketingMode {
+  NO_TICKETS = "NO_TICKETS",
+  EXTERNAL_LINK = "EXTERNAL_LINK",
+  INTERNAL = "INTERNAL",
+}
+
 // ── Estados de inscripción a torneo ───────────────────────────────────────────
 // Estado de la inscripción de un jugador específico a un torneo específico.
 export enum RegistrationStatus {

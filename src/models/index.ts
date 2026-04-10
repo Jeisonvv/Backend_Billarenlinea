@@ -33,6 +33,10 @@ export type { IOrder, IOrderDocument, IOrderModel, IOrderItem } from "./order.mo
 export { default as Tournament } from "./tournament.model.ts";
 export type { ITournament, ITournamentDocument, IPrize } from "./tournament.model.ts";
 
+// Modelo de eventos
+export { default as Event } from "./event.model.ts";
+export type { IEvent, IEventDocument, IEventPrize } from "./event.model.ts";
+
 // Modelo de inscripciones a torneos
 export { default as TournamentRegistration } from "./tournament-registration.model.ts";
 export type { ITournamentRegistration, ITournamentRegistrationDocument, ITournamentRegistrationModel } from "./tournament-registration.model.ts";

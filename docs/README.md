@@ -8,6 +8,7 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 - payments/: documentacion de pagos e integracion con Wompi.
 - data/: guias de seeding y verificacion de datos.
 - bot/: documentacion de integracion tecnica del bot con el backend.
+- events/: documentacion del catalogo y gestion de eventos.
 
 ## Archivos
 
@@ -28,3 +29,7 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 ### bot
 
 - bot/BOT_INTEGRATION_GUIDE.md: autenticacion, variables, endpoints y troubleshooting del bot.
+
+### events
+
+- events/EVENTS_API_GUIDE.md: catalogo y administracion de eventos como copas, masters y campeonatos.
