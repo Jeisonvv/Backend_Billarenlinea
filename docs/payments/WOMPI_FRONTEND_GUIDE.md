@@ -114,7 +114,7 @@ La respuesta del backend trae toda la configuracion necesaria para Wompi.
     "reference": "RAFFLE-ABC123-1710450123-FA12BC34",
     "amountInCents": 3000000,
     "currency": "COP",
-    "expirationTime": "2026-03-14T22:00:00.000Z",
+    "reservationExpiresAt": "2026-03-14T22:00:00.000Z",
     "redirectUrl": "http://localhost:5173/payments/wompi",
     "checkoutUrl": "https://checkout.wompi.co/p/",
     "widgetUrl": "https://checkout.wompi.co/widget.js",
@@ -176,7 +176,6 @@ async function pagarRifa(raffleId, numbers, token) {
       integrity: data.signature.integrity,
     },
     redirectUrl: data.redirectUrl,
-    expirationTime: data.expirationTime,
     customerData: {
       email: data.customerData.email,
       fullName: data.customerData.fullName,
@@ -210,7 +209,6 @@ Campos necesarios:
 - `reference`
 - `signature:integrity`
 - `redirect-url`
-- `expiration-time`
 
 Ejemplo:
 
@@ -222,7 +220,6 @@ Ejemplo:
   <input type="hidden" name="reference" value="RAFFLE-ABC123" />
   <input type="hidden" name="signature:integrity" value="FIRMA" />
   <input type="hidden" name="redirect-url" value="http://localhost:5173/payments/wompi" />
-  <input type="hidden" name="expiration-time" value="2026-03-14T22:00:00.000Z" />
   <button type="submit">Pagar con Wompi</button>
 </form>
 ```

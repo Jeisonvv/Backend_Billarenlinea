@@ -228,6 +228,15 @@ export enum PaymentProvider {
   WOMPI = "WOMPI",
 }
 
+// ── Tipo de objeto pagable ──────────────────────────────────────────────────
+// Permite reutilizar la misma infraestructura de pagos para rifas,
+// inscripciones a torneos, pedidos y otros cobros futuros.
+export enum PaymentPayableType {
+  RAFFLE_TICKET = "RAFFLE_TICKET",
+  TOURNAMENT_REGISTRATION = "TOURNAMENT_REGISTRATION",
+  ORDER = "ORDER",
+}
+
 // ── Estados de una transacción externa de pago ──────────────────────────────
 export enum PaymentTransactionStatus {
   PENDING = "PENDING",
@@ -235,6 +244,7 @@ export enum PaymentTransactionStatus {
   DECLINED = "DECLINED",
   VOIDED = "VOIDED",
   ERROR = "ERROR",
+  EXPIRED = "EXPIRED",
 }
 
 // ── Estados de una transmisión ────────────────────────────────────────────────

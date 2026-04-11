@@ -29,6 +29,14 @@ export type { IProduct, IProductDocument, IProductVariant } from "./product.mode
 export { default as Order } from "./order.model.ts";
 export type { IOrder, IOrderDocument, IOrderModel, IOrderItem } from "./order.model.ts";
 
+// Modelo central de transacciones de pago
+export { default as PaymentTransaction } from "./payment-transaction.model.ts";
+export type {
+	IPaymentTransaction,
+	IPaymentTransactionDocument,
+	IPaymentTransactionModel,
+} from "./payment-transaction.model.ts";
+
 // Modelo de torneos
 export { default as Tournament } from "./tournament.model.ts";
 export type { ITournament, ITournamentDocument, IPrize } from "./tournament.model.ts";

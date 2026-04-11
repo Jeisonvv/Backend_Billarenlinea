@@ -4,7 +4,7 @@ import RaffleNumber from "../models/raffle-number.model.ts";
 import RaffleTicket from "../models/raffle-ticket.model.ts";
 import User from "../models/user.model.ts";
 import { Channel, PaymentMethod, RaffleNumberStatus, RaffleStatus, TicketStatus, UserRole } from "../models/enums.ts";
-import { cleanupExpiredRaffleReservations } from "./wompi.service.ts";
+import { cleanupExpiredRaffleReservations } from "./payment.service.ts";
 
 export interface ListRafflesParams {
   status?: string;

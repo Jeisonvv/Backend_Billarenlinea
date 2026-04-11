@@ -228,7 +228,7 @@ Respuesta esperada:
     "reference": "RAFFLE-ABC123-...",
     "amountInCents": 3000000,
     "currency": "COP",
-    "expirationTime": "2026-03-14T22:00:00.000Z",
+    "reservationExpiresAt": "2026-03-14T22:00:00.000Z",
     "redirectUrl": "http://localhost:5173/payments/wompi",
     "checkoutUrl": "https://checkout.wompi.co/p/",
     "widgetUrl": "https://checkout.wompi.co/widget.js",
@@ -277,7 +277,6 @@ const checkout = new WidgetCheckout({
     integrity: data.signature.integrity,
   },
   redirectUrl: data.redirectUrl,
-  expirationTime: data.expirationTime,
   customerData: {
     email: data.customerData.email,
     fullName: data.customerData.fullName,
@@ -301,7 +300,6 @@ Puedes construir un formulario `GET` hacia `https://checkout.wompi.co/p/` con:
 - `reference`
 - `signature:integrity`
 - `redirect-url`
-- `expiration-time`
 
 ## Webhook de Wompi
 
