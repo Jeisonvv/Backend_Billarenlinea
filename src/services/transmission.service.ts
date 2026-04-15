@@ -1,5 +1,5 @@
 
-import TransmissionRequest from "../models/transmission-request.model.ts";
+import TransmissionRequest from "../models/transmission-request.model.js";
 
 export async function findAllTransmissions() {
   return TransmissionRequest.find().sort({ createdAt: -1 });

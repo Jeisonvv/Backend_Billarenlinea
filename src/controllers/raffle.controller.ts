@@ -7,7 +7,7 @@ import {
   getRaffleNumbersService,
   listRafflesService,
   purchaseRaffleTicketsService,
-} from "../services/raffle.service.ts";
+} from "../services/raffle.service.js";
 
 export async function createRaffle(req: Request, res: Response) {
   try {

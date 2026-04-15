@@ -5,7 +5,7 @@ import {
   promoteLeadSession,
   updateLeadSessionData,
   updateLeadSessionState,
-} from "../controllers/lead-session.controller.ts";
+} from "../controllers/lead-session.controller.js";
 
 const router = Router();
 

@@ -5,7 +5,7 @@ import {
   createTransmissionService,
   updateTransmissionService,
   deleteTransmissionService,
-} from "../services/transmission.service.ts";
+} from "../services/transmission.service.js";
 
 // Obtener todas las solicitudes de transmisión
 export async function getTransmissions(req: Request, res: Response) {

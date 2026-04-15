@@ -32,9 +32,9 @@ export async function updateConversationStateService(userId: string, { channel, 
   await user.save();
   return user.toObject();
 }
-import User, { normalizeIdentityDocument } from "../models/user.model.ts";
-import { Channel, UserRole, UserStatus } from "../models/enums.ts";
-import { isMailConfigured, sendAccountSetupEmail } from "./mail.service.ts";
+import User, { normalizeIdentityDocument } from "../models/user.model.js";
+import { Channel, UserRole, UserStatus } from "../models/enums.js";
+import { isMailConfigured, sendAccountSetupEmail } from "./mail.service.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES DE PARÁMETROS

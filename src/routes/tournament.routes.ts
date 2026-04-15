@@ -41,9 +41,9 @@ import {
   addGroupsHandler,
   addPlayerToGroupHandler,
   getPendingPaymentsHandler,
-} from "../controllers/tournament.controller.ts";
-import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
-import { UserRole } from "../models/enums.ts";
+} from "../controllers/tournament.controller.js";
+import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
+import { UserRole } from "../models/enums.js";
 
 const router = Router();
 

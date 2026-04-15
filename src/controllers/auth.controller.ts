@@ -12,11 +12,11 @@ import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createHash, randomBytes } from "node:crypto";
-import User from "../models/user.model.ts";
-import RevokedToken from "../models/revoked-token.model.ts";
-import { isMailConfigured, sendPasswordResetEmail } from "../services/mail.service.ts";
-import { createWebUserService } from "../services/user.service.ts";
-import { clearAuthCookie, extractAuthToken, setAuthCookie } from "../utils/auth-token.ts";
+import User from "../models/user.model.js";
+import RevokedToken from "../models/revoked-token.model.js";
+import { isMailConfigured, sendPasswordResetEmail } from "../services/mail.service.js";
+import { createWebUserService } from "../services/user.service.js";
+import { clearAuthCookie, extractAuthToken, setAuthCookie } from "../utils/auth-token.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/logout

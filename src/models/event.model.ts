@@ -5,7 +5,7 @@ import {
   EventTicketingMode,
   EventTier,
   EventType,
-} from "./enums.ts";
+} from "./enums.js";
 
 export interface IEventPrize {
   position: number;

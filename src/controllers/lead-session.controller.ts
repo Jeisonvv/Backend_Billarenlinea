@@ -5,7 +5,7 @@ import {
   promoteLeadSessionService,
   updateLeadSessionDataService,
   upsertLeadSessionStateService,
-} from "../services/lead-session.service.ts";
+} from "../services/lead-session.service.js";
 
 function getErrorStatus(error: any) {
   if (error?.message === "Sesión temporal no encontrada.") return 404;

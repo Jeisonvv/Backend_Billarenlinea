@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
-import Match from "../models/match.model.ts";
-import { advanceWinner, recordGroupResult } from "./bracket.service.ts";
-import { RoundType } from "../models/enums.ts";
+import Match from "../models/match.model.js";
+import { advanceWinner, recordGroupResult } from "./bracket.service.js";
+import { RoundType } from "../models/enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVICIOS

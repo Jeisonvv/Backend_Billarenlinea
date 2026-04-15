@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { RaffleNumberStatus } from "./enums.ts";
+import { RaffleNumberStatus } from "./enums.js";
 
 export function isPowerOfTen(value: number) {
   if (!Number.isInteger(value) || value < 10) return false;

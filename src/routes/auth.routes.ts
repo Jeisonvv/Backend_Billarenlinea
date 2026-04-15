@@ -10,8 +10,8 @@
  *   POST /reset-password  → Confirmar nueva contraseña con token
  */
 import { Router } from "express";
-import { register, login, botLogin, logout, forgotPassword, resetPassword } from "../controllers/auth.controller.ts";
-import { authLimiter } from "../middlewares/rateLimiter.middleware.ts";
+import { register, login, botLogin, logout, forgotPassword, resetPassword } from "../controllers/auth.controller.js";
+import { authLimiter } from "../middlewares/rateLimiter.middleware.js";
 
 const router = Router();
 

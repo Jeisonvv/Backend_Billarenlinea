@@ -20,7 +20,7 @@ import {
   PlayerCategory,
   InterestType,
   UserRole,
-} from "./enums.ts";
+} from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES DE SUB-DOCUMENTOS

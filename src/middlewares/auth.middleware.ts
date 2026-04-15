@@ -10,9 +10,9 @@
  */
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { UserRole } from "../models/enums.ts";
-import RevokedToken from "../models/revoked-token.model.ts";
-import { extractAuthToken } from "../utils/auth-token.ts";
+import { UserRole } from "../models/enums.js";
+import RevokedToken from "../models/revoked-token.model.js";
+import { extractAuthToken } from "../utils/auth-token.js";
 
 interface JwtPayload {
   sub: string;

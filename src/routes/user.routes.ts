@@ -19,11 +19,11 @@ import {
   deleteUser,
   getUserByProvider,
   updateConversationState,
-} from "../controllers/user.controller.ts";
+} from "../controllers/user.controller.js";
 // Endpoint público para obtener solo el estado conversacional de un canal
-import { getConversationStateByUserId } from "../controllers/user.controller.ts";
-import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
-import { UserRole } from "../models/enums.ts";
+import { getConversationStateByUserId } from "../controllers/user.controller.js";
+import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
+import { UserRole } from "../models/enums.js";
 
 const router = Router();
 

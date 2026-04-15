@@ -12,9 +12,9 @@ import {
   getMatchesByTournament,
   recordMatchResult,
   getMatchById,
-} from "../controllers/match.controller.ts";
-import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
-import { UserRole } from "../models/enums.ts";
+} from "../controllers/match.controller.js";
+import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
+import { UserRole } from "../models/enums.js";
 
 const router = Router();
 

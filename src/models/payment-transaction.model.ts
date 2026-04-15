@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { PaymentPayableType, PaymentProvider, PaymentTransactionStatus } from "./enums.ts";
+import { PaymentPayableType, PaymentProvider, PaymentTransactionStatus } from "./enums.js";
 
 export interface IPaymentTransaction {
   user: mongoose.Types.ObjectId;

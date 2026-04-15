@@ -42,7 +42,7 @@ import {
   deleteUserService,
   getUserByProviderService,
   updateConversationStateService,
-} from "../services/user.service.ts";
+} from "../services/user.service.js";
 
 function getDuplicateUserMessage(field?: string) {
   switch (field) {

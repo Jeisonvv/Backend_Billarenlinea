@@ -4,7 +4,7 @@ import mongoose, {
   Schema,
   Types,
 } from "mongoose";
-import { Channel, InterestType, LeadSessionStatus } from "./enums.ts";
+import { Channel, InterestType, LeadSessionStatus } from "./enums.js";
 
 export interface ILeadSessionData {
   name?: string;

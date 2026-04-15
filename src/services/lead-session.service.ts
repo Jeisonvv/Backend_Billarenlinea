@@ -1,8 +1,8 @@
 import LeadSession, {
   type ILeadSessionData,
   type ILeadSessionDocument,
-} from "../models/lead-session.model.ts";
-import User, { normalizeIdentityDocument } from "../models/user.model.ts";
+} from "../models/lead-session.model.js";
+import User, { normalizeIdentityDocument } from "../models/user.model.js";
 import {
   Channel,
   LeadSessionStatus,
@@ -10,8 +10,8 @@ import {
   UserRole,
   UserSource,
   UserStatus,
-} from "../models/enums.ts";
-import { createUserService } from "./user.service.ts";
+} from "../models/enums.js";
+import { createUserService } from "./user.service.js";
 
 interface EnsureLeadSessionParams {
   channel: string;

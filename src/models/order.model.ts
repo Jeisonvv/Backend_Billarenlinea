@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { Channel, OrderStatus, PaymentMethod } from "./enums.ts";
+import { Channel, OrderStatus, PaymentMethod } from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES

@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { MatchStatus, RoundType } from "./enums.ts";
+import { MatchStatus, RoundType } from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFAZ PRINCIPAL

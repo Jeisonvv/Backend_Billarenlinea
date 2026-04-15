@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { PaymentProvider, PaymentTransactionStatus } from "../models/enums.ts";
+import { PaymentProvider, PaymentTransactionStatus } from "../models/enums.js";
 
 export interface WompiCustomerData {
   email: string;

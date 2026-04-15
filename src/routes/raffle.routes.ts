@@ -20,10 +20,10 @@ import {
   getRaffleNumbers,
   getRaffles,
   purchaseRaffleTickets,
-} from "../controllers/raffle.controller.ts";
-import { createWompiCheckout } from "../controllers/payment.controller.ts";
-import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
-import { UserRole } from "../models/enums.ts";
+} from "../controllers/raffle.controller.js";
+import { createWompiCheckout } from "../controllers/payment.controller.js";
+import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
+import { UserRole } from "../models/enums.js";
 
 const router = Router();
 const adminOrStaff = [requireAuth, requireRole(UserRole.ADMIN, UserRole.STAFF)];

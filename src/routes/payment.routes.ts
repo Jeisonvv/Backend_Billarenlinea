@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { handleWompiWebhookHandler } from "../controllers/payment.controller.ts";
+import { handleWompiWebhookHandler } from "../controllers/payment.controller.js";
 
 const router = Router();
 

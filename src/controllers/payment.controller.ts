@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { createWompiCheckoutForRaffle, handleWompiWebhook } from "../services/payment.service.ts";
+import { createWompiCheckoutForRaffle, handleWompiWebhook } from "../services/payment.service.js";
 
 export async function createWompiCheckout(req: Request, res: Response) {
   try {

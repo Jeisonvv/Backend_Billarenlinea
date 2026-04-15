@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import mongoose from "mongoose";
-import PaymentTransaction from "../models/payment-transaction.model.ts";
-import Raffle from "../models/raffle.model.ts";
-import RaffleNumber, { normalizeRaffleNumberInput } from "../models/raffle-number.model.ts";
-import RaffleTicket from "../models/raffle-ticket.model.ts";
-import User from "../models/user.model.ts";
+import PaymentTransaction from "../models/payment-transaction.model.js";
+import Raffle from "../models/raffle.model.js";
+import RaffleNumber, { normalizeRaffleNumberInput } from "../models/raffle-number.model.js";
+import RaffleTicket from "../models/raffle-ticket.model.js";
+import User from "../models/user.model.js";
 import {
   Channel,
   PaymentPayableType,
@@ -14,7 +14,7 @@ import {
   RaffleStatus,
   TicketStatus,
   UserRole,
-} from "../models/enums.ts";
+} from "../models/enums.js";
 import {
   createWompiCheckoutConfig,
   getWompiRedirectUrl,
@@ -22,7 +22,7 @@ import {
   sha256Hex,
   type WompiEventPayload,
   verifyWompiEvent,
-} from "./wompi.service.ts";
+} from "./wompi.service.js";
 
 interface ActorContext {
   id: string;

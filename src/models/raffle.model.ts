@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
-import { RaffleStatus } from "./enums.ts";
-import RaffleNumber, { isPowerOfTen } from "./raffle-number.model.ts";
+import { RaffleStatus } from "./enums.js";
+import RaffleNumber, { isPowerOfTen } from "./raffle-number.model.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES

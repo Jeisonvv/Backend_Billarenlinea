@@ -37,8 +37,8 @@ import {
   addGroupsService,
   addPlayerToGroupService,
   getPendingPaymentsService,
-} from "../services/tournament.service.ts";
-import type { GroupInput } from "../services/bracket.service.ts";
+} from "../services/tournament.service.js";
+import type { GroupInput } from "../services/bracket.service.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /tournaments

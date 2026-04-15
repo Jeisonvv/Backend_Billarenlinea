@@ -10,12 +10,12 @@
  */
 
 import mongoose from "mongoose";
-import Match from "../models/match.model.ts";
-import TournamentGroup, { type ITournamentGroupDocument } from "../models/tournament-group.model.ts";
-import Tournament from "../models/tournament.model.ts";
-import TournamentRegistration from "../models/tournament-registration.model.ts";
-import User from "../models/user.model.ts";
-import { MatchStatus, RoundType, RegistrationStatus, TournamentStatus } from "../models/enums.ts";
+import Match from "../models/match.model.js";
+import TournamentGroup, { type ITournamentGroupDocument } from "../models/tournament-group.model.js";
+import Tournament from "../models/tournament.model.js";
+import TournamentRegistration from "../models/tournament-registration.model.js";
+import User from "../models/user.model.js";
+import { MatchStatus, RoundType, RegistrationStatus, TournamentStatus } from "../models/enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILIDADES INTERNAS

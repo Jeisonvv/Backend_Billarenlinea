@@ -14,7 +14,7 @@ import {
   getMatchesByTournamentService,
   recordMatchResultService,
   getMatchByIdService,
-} from "../services/match.service.ts";
+} from "../services/match.service.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /matches/tournament/:id

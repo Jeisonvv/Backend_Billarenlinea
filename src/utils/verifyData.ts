@@ -7,14 +7,14 @@
  */
 
 import mongoose from "mongoose";
-import User from "../models/user.model.ts";
-import Product from "../models/product.model.ts";
-import Order from "../models/order.model.ts";
-import Tournament from "../models/tournament.model.ts";
-import TournamentRegistration from "../models/tournament-registration.model.ts";
-import Raffle from "../models/raffle.model.ts";
-import RaffleTicket from "../models/raffle-ticket.model.ts";
-import TransmissionRequest from "../models/transmission-request.model.ts";
+import User from "../models/user.model.js";
+import Product from "../models/product.model.js";
+import Order from "../models/order.model.js";
+import Tournament from "../models/tournament.model.js";
+import TournamentRegistration from "../models/tournament-registration.model.js";
+import Raffle from "../models/raffle.model.js";
+import RaffleTicket from "../models/raffle-ticket.model.js";
+import TransmissionRequest from "../models/transmission-request.model.js";
 
 // Colores
 const colors = {

@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
-import Event from "../models/event.model.ts";
+import Event from "../models/event.model.js";
 import {
   EventRegistrationMode,
   EventStatus,
   EventTicketingMode,
-} from "../models/enums.ts";
+} from "../models/enums.js";
 
 export interface ListEventsParams {
   status?: string;

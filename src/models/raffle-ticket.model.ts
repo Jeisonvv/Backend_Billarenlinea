@@ -1,8 +1,8 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
-import { Channel, PaymentMethod, PaymentProvider, PaymentTransactionStatus, RaffleNumberStatus, TicketStatus } from "./enums.ts";
-import Raffle from "./raffle.model.ts";
-import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.ts";
-import User from "./user.model.ts";
+import { Channel, PaymentMethod, PaymentProvider, PaymentTransactionStatus, RaffleNumberStatus, TicketStatus } from "./enums.js";
+import Raffle from "./raffle.model.js";
+import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.js";
+import User from "./user.model.js";
 
 const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
 

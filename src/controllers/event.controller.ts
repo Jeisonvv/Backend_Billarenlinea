@@ -5,7 +5,7 @@ import {
   getEventByIdService,
   listEventsService,
   updateEventService,
-} from "../services/event.service.ts";
+} from "../services/event.service.js";
 
 export async function createEvent(req: Request, res: Response) {
   try {

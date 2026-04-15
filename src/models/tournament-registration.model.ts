@@ -4,7 +4,7 @@ import {
   PaymentMethod,
   PlayerCategory,
   RegistrationStatus,
-} from "./enums.ts";
+} from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES

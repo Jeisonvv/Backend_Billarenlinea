@@ -4,7 +4,7 @@
  * Agrega la propiedad `user` al objeto Request para que TypeScript
  * no se queje cuando el middleware de auth la inyecta.
  */
-import { UserRole } from "../models/enums.ts";
+import { UserRole } from "../models/enums.js";
 
 declare global {
   namespace Express {

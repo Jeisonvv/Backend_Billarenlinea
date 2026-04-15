@@ -1,5 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
-import { ProductCategory } from "./enums.ts";
+import { ProductCategory } from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES

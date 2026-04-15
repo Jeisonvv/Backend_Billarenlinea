@@ -1,9 +1,9 @@
 import mongoose from "mongoose";
-import Tournament from "../models/tournament.model.ts";
-import TournamentRegistration from "../models/tournament-registration.model.ts";
-import TournamentGroup from "../models/tournament-group.model.ts";
-import Match from "../models/match.model.ts";
-import { RegistrationStatus, RoundType } from "../models/enums.ts";
+import Tournament from "../models/tournament.model.js";
+import TournamentRegistration from "../models/tournament-registration.model.js";
+import TournamentGroup from "../models/tournament-group.model.js";
+import Match from "../models/match.model.js";
+import { RegistrationStatus, RoundType } from "../models/enums.js";
 import {
   generateBracket,
   createGroups,
@@ -13,7 +13,7 @@ import {
   generateEliminationFromGroups,
   generateAdjustmentRound,
   type GroupInput,
-} from "./bracket.service.ts";
+} from "./bracket.service.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES DE PARÁMETROS

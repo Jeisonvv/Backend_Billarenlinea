@@ -1,5 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
-import { PlayerCategory, TournamentStatus, TournamentFormat } from "./enums.ts";
+import { PlayerCategory, TournamentStatus, TournamentFormat } from "./enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERFACES

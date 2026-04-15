@@ -5,9 +5,9 @@ import {
   getEventById,
   getEvents,
   updateEvent,
-} from "../controllers/event.controller.ts";
-import { requireAuth, requireRole } from "../middlewares/auth.middleware.ts";
-import { UserRole } from "../models/enums.ts";
+} from "../controllers/event.controller.js";
+import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
+import { UserRole } from "../models/enums.js";
 
 const router = Router();
 
