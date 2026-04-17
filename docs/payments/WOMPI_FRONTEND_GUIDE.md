@@ -115,6 +115,7 @@ La respuesta del backend trae toda la configuracion necesaria para Wompi.
     "amountInCents": 3000000,
     "currency": "COP",
     "reservationExpiresAt": "2026-03-14T22:00:00.000Z",
+    "expirationTime": "2026-03-14T22:00:00.000Z",
     "redirectUrl": "http://localhost:5173/payments/wompi",
     "checkoutUrl": "https://checkout.wompi.co/p/",
     "widgetUrl": "https://checkout.wompi.co/widget.js",
@@ -171,6 +172,7 @@ async function pagarRifa(raffleId, numbers, token) {
     currency: data.currency,
     amountInCents: data.amountInCents,
     reference: data.reference,
+    expirationTime: data.expirationTime,
     publicKey: data.publicKey,
     signature: {
       integrity: data.signature.integrity,
@@ -194,6 +196,7 @@ Notas:
 
 - El callback del widget no reemplaza al webhook.
 - El resultado final del pago debe venir del backend, no del callback del navegador.
+- Debes reenviar `expirationTime` al widget para que Wompi cierre el checkout cuando expire la reserva.
 
 ## Opcion 2: redirigir a Web Checkout
 
@@ -218,6 +221,7 @@ Ejemplo:
   <input type="hidden" name="currency" value="COP" />
   <input type="hidden" name="amount-in-cents" value="3000000" />
   <input type="hidden" name="reference" value="RAFFLE-ABC123" />
+  <input type="hidden" name="expiration-time" value="2026-03-14T22:00:00.000Z" />
   <input type="hidden" name="signature:integrity" value="FIRMA" />
   <input type="hidden" name="redirect-url" value="http://localhost:5173/payments/wompi" />
   <button type="submit">Pagar con Wompi</button>

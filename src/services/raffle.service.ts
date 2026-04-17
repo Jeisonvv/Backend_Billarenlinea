@@ -1,9 +1,19 @@
 import mongoose from "mongoose";
+import PaymentTransaction from "../models/payment-transaction.model.js";
 import Raffle from "../models/raffle.model.js";
 import RaffleNumber from "../models/raffle-number.model.js";
 import RaffleTicket from "../models/raffle-ticket.model.js";
 import User from "../models/user.model.js";
-import { Channel, PaymentMethod, RaffleNumberStatus, RaffleStatus, TicketStatus, UserRole } from "../models/enums.js";
+import {
+  Channel,
+  PaymentMethod,
+  PaymentPayableType,
+  PaymentTransactionStatus,
+  RaffleNumberStatus,
+  RaffleStatus,
+  TicketStatus,
+  UserRole,
+} from "../models/enums.js";
 import { cleanupExpiredRaffleReservations } from "./payment.service.js";
 
 export interface ListRafflesParams {
@@ -14,7 +24,7 @@ export interface ListRafflesParams {
 
 interface PurchaseRaffleTicketsParams {
   userId?: string;
-  numbers: Array<string | number>;
+  numbers?: Array<string | number>;
   channel?: string;
   paymentMethod?: string;
   paymentReference?: string;
@@ -24,6 +34,19 @@ interface PurchaseRaffleTicketsParams {
 interface ActorContext {
   id: string;
   role: UserRole;
+}
+
+function isFreeRaffleIdentityDuplicateError(error: unknown) {
+  const duplicateError = error as {
+    code?: number;
+    keyPattern?: Record<string, number>;
+    message?: string;
+  };
+
+  return duplicateError.code === 11000 && (
+    (duplicateError.keyPattern?.raffle === 1 && duplicateError.keyPattern?.participantIdentityDocument === 1)
+    || duplicateError.message?.includes("free_raffle_identity_once_per_raffle")
+  );
 }
 
 function toObjectId(id: string, fieldName: string) {
@@ -64,6 +87,33 @@ function getPaymentMethod(inputMethod?: string) {
   return inputMethod as PaymentMethod;
 }
 
+async function getRandomAvailableRaffleNumber(raffleId: mongoose.Types.ObjectId) {
+  const availableCount = await RaffleNumber.countDocuments({
+    raffle: raffleId,
+    status: RaffleNumberStatus.AVAILABLE,
+  });
+
+  if (availableCount === 0) {
+    throw new Error("No hay números disponibles en esta rifa.");
+  }
+
+  const randomOffset = Math.floor(Math.random() * availableCount);
+  const randomNumber = await RaffleNumber.findOne({
+    raffle: raffleId,
+    status: RaffleNumberStatus.AVAILABLE,
+  })
+    .sort({ numericValue: 1 })
+    .skip(randomOffset)
+    .select("number")
+    .lean();
+
+  if (!randomNumber) {
+    throw new Error("No fue posible asignar un número aleatorio para la rifa.");
+  }
+
+  return randomNumber.number;
+}
+
 function getTicketPriceValue(input: unknown) {
   const ticketPrice = typeof input === "number" ? input : Number(input);
 
@@ -101,6 +151,69 @@ export async function createRaffleService(data: Record<string, unknown>, created
     createdBy: createdById,
     soldTickets: 0,
   });
+}
+
+export async function deleteRaffleService(id: string) {
+  const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
+
+  const raffle = await Raffle.findById(raffleId).select("_id name status").lean();
+  if (!raffle) {
+    throw new Error("Rifa no encontrada.");
+  }
+
+  if (raffle.status === RaffleStatus.DRAWN) {
+    throw new Error("No se puede eliminar una rifa que ya fue sorteada.");
+  }
+
+  const blockingTicket = await RaffleTicket.findOne({
+    raffle: raffleId,
+    status: { $in: [TicketStatus.RESERVED, TicketStatus.PAID, TicketStatus.WINNER] },
+  })
+    .select("_id status")
+    .lean();
+
+  if (blockingTicket) {
+    throw new Error("No se puede eliminar una rifa con boletos activos o confirmados.");
+  }
+
+  const raffleTickets = await RaffleTicket.find({ raffle: raffleId }).select("_id").lean();
+  const ticketIds = raffleTickets.map((ticket) => ticket._id);
+
+  const blockingPayment = ticketIds.length > 0
+    ? await PaymentTransaction.findOne({
+      payableType: PaymentPayableType.RAFFLE_TICKET,
+      payableId: { $in: ticketIds },
+      status: { $in: [PaymentTransactionStatus.PENDING, PaymentTransactionStatus.APPROVED] },
+    })
+      .select("_id status")
+      .lean()
+    : null;
+
+  if (blockingPayment) {
+    throw new Error("No se puede eliminar una rifa con transacciones de pago activas o aprobadas.");
+  }
+
+  const [deletedNumbers, deletedTickets, deletedPayments] = await Promise.all([
+    RaffleNumber.deleteMany({ raffle: raffleId }),
+    RaffleTicket.deleteMany({ raffle: raffleId }),
+    ticketIds.length > 0
+      ? PaymentTransaction.deleteMany({
+        payableType: PaymentPayableType.RAFFLE_TICKET,
+        payableId: { $in: ticketIds },
+      })
+      : Promise.resolve({ deletedCount: 0 }),
+  ]);
+
+  await Raffle.deleteOne({ _id: raffleId });
+
+  return {
+    raffleId: raffle._id,
+    raffleName: raffle.name,
+    deletedNumbers: deletedNumbers.deletedCount ?? 0,
+    deletedTickets: deletedTickets.deletedCount ?? 0,
+    deletedPayments: deletedPayments.deletedCount ?? 0,
+  };
 }
 
 export async function listRafflesService(params: ListRafflesParams) {
@@ -194,6 +307,50 @@ export async function getRaffleNumbersService(
   };
 }
 
+export async function getRaffleNumberOwnersService(
+  id: string,
+  options: { status?: string; page: number; limit: number },
+) {
+  const raffleId = toObjectId(id, "Raffle ID");
+  await cleanupExpiredRaffleReservations(id);
+
+  const raffle = await Raffle.findById(raffleId)
+    .select("_id name totalTickets ticketPrice status winner winnerTicket")
+    .populate("winner", "name avatarUrl phone webAuth.email")
+    .lean({ virtuals: true });
+
+  if (!raffle) {
+    throw new Error("Rifa no encontrada.");
+  }
+
+  const ownerStatuses = [RaffleNumberStatus.RESERVED, RaffleNumberStatus.PAID, RaffleNumberStatus.WINNER];
+  const filter: Record<string, unknown> = {
+    raffle: raffleId,
+    status: options.status ?? { $in: ownerStatuses },
+  };
+
+  const skip = (options.page - 1) * options.limit;
+  const [numbers, total] = await Promise.all([
+    RaffleNumber.find(filter)
+      .populate("user", "name avatarUrl phone webAuth.email identityDocument")
+      .populate("ticket", "status paymentStatus paymentReference paidAt createdAt")
+      .sort({ numericValue: 1 })
+      .skip(skip)
+      .limit(options.limit)
+      .lean(),
+    RaffleNumber.countDocuments(filter),
+  ]);
+
+  return {
+    raffle,
+    total,
+    page: options.page,
+    limit: options.limit,
+    appliedStatusFilter: options.status ?? "ASSIGNED_ONLY",
+    numbers,
+  };
+}
+
 export async function getAvailableRaffleNumbersService(id: string) {
   const raffleId = toObjectId(id, "Raffle ID");
   await cleanupExpiredRaffleReservations(id);
@@ -230,7 +387,9 @@ export async function purchaseRaffleTicketsService(
     throw new Error("La rifa no está activa para venta de boletos.");
   }
 
-  if (!params.numbers || params.numbers.length === 0) {
+  const raffleIsFree = raffle.ticketPrice === 0;
+
+  if (!raffleIsFree && (!params.numbers || params.numbers.length === 0)) {
     throw new Error("Debes enviar al menos un número.");
   }
 
@@ -245,14 +404,16 @@ export async function purchaseRaffleTicketsService(
     throw new Error("Usuario no encontrado.");
   }
 
-  const raffleIsFree = raffle.ticketPrice === 0;
+  const requestedNumbers = raffleIsFree
+    ? [await getRandomAvailableRaffleNumber(raffleObjectId)]
+    : params.numbers;
   const requestedStatus = getTicketStatus(params.status as TicketStatus | undefined);
   const status = raffleIsFree ? TicketStatus.PAID : requestedStatus;
   const channel = getPurchaseChannel(params.channel);
   const paymentMethod = getPaymentMethod(params.paymentMethod);
 
-  if (raffleIsFree && params.numbers.length !== 1) {
-    throw new Error("En una rifa gratuita cada usuario solo puede obtener un número.");
+  if (raffleIsFree && params.numbers?.length) {
+    throw new Error("En rifas gratuitas el número se asigna automáticamente y no debes enviarlo.");
   }
 
   if (raffleIsFree && params.status && requestedStatus !== TicketStatus.PAID) {
@@ -293,16 +454,30 @@ export async function purchaseRaffleTicketsService(
   const ticketData: Record<string, unknown> = {
     raffle: raffleObjectId,
     user: userObjectId,
-    numbers: params.numbers,
+    numbers: requestedNumbers,
     status,
     channel,
     isWinner: false,
   };
 
+  if (raffleIsFree && user.identityDocument) {
+    ticketData.participantIdentityDocument = user.identityDocument;
+  }
+
   if (paymentMethod) ticketData.paymentMethod = paymentMethod;
   if (params.paymentReference) ticketData.paymentReference = params.paymentReference;
 
-  const ticket = await RaffleTicket.create(ticketData);
+  let ticket;
+
+  try {
+    ticket = await RaffleTicket.create(ticketData);
+  } catch (error) {
+    if (isFreeRaffleIdentityDuplicateError(error)) {
+      throw new Error("Ya existe una participación para este documento de identidad en esta rifa gratuita.");
+    }
+
+    throw error;
+  }
 
   return RaffleTicket.findById(ticket._id)
     .populate("user", "name avatarUrl")

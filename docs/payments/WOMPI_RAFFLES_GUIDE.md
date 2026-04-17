@@ -156,6 +156,44 @@ Query params opcionales:
 
 `GET /api/raffles/:id/available-numbers`
 
+### Eliminar rifa
+
+`DELETE /api/raffles/:id`
+
+Requiere `ADMIN` o `STAFF`.
+
+Este endpoint elimina la rifa y tambien limpia:
+
+- numeros de la rifa
+- tickets de la rifa
+- transacciones de pago asociadas a esos tickets
+
+Solo se permite si la rifa esta en un estado seguro para borrado.
+
+No se puede eliminar si:
+
+- la rifa ya fue sorteada
+- existen boletos `RESERVED`, `PAID` o `WINNER`
+- existen transacciones `PENDING` o `APPROVED` ligadas a la rifa
+
+Esto sirve para borrar rifas creadas por error o rifas de prueba que no alcanzaron a tener compras o participaciones activas.
+
+Ejemplo de respuesta:
+
+```json
+{
+  "ok": true,
+  "message": "Rifa eliminada correctamente.",
+  "data": {
+    "raffleId": "67d3f0f4e72d9a0012345000",
+    "raffleName": "Sorteo Taco Predator Mayo",
+    "deletedNumbers": 100,
+    "deletedTickets": 0,
+    "deletedPayments": 0
+  }
+}
+```
+
 ## Endpoint de compra directa de boletos
 
 `POST /api/raffles/:id/tickets`
@@ -169,6 +207,14 @@ Caso cliente normal:
   "numbers": ["00", "01", "02"],
   "channel": "WEB",
   "status": "RESERVED"
+}
+```
+
+Caso rifa gratuita:
+
+```json
+{
+  "channel": "WEB"
 }
 ```
 
@@ -192,6 +238,104 @@ Reglas:
 - Un cliente no puede marcar una compra como `PAID`.
 - Un cliente no puede comprar para otro usuario.
 - Los numeros deben estar disponibles al momento de la compra.
+- En rifas gratuitas el usuario no elige el numero; el backend asigna uno aleatorio disponible.
+
+## Reglas de rifas gratuitas
+
+Cuando `ticketPrice = 0`, la rifa se trata como gratuita.
+
+Reglas aplicadas por el backend:
+
+- Nadie puede participar sin existir primero como usuario autenticado.
+- El usuario debe tener documento de identidad registrado.
+- Cada participacion gratuita queda asociada al `user` dueno del numero.
+- Cada usuario solo puede obtener un numero por rifa gratuita y ese numero se asigna al azar.
+- La restriccion real se aplica por documento de identidad, no solo por cuenta.
+- La participacion gratuita se confirma inmediatamente y no pasa por Wompi.
+- Si el cliente envia `numbers` en una rifa gratuita, el backend lo rechaza.
+
+Esto permite saber siempre:
+
+- quien es el dueno de un numero
+- quien participo en una rifa gratuita
+- quien gano el sorteo final
+
+Ademas, el backend guarda un snapshot interno del documento de identidad en el ticket para bloquear intentos concurrentes o cuentas duplicadas de la misma persona dentro de la misma rifa gratuita.
+
+## Endpoint admin para ver duenos de numeros
+
+`GET /api/raffles/:id/number-owners`
+
+Requiere `ADMIN` o `STAFF`.
+
+Este endpoint devuelve los numeros que ya tienen dueno y sus datos de usuario.
+
+Comportamiento por defecto:
+
+- Si no envias `status`, lista solo numeros asignados: `RESERVED`, `PAID` y `WINNER`.
+- Cada numero incluye su usuario y el ticket relacionado.
+- Tambien devuelve el resumen basico de la rifa y, si ya existe, el ganador.
+
+Query params opcionales:
+
+- `status`
+- `page`
+- `limit`
+
+Ejemplo:
+
+```http
+GET /api/raffles/67d3f0f4e72d9a0012345000/number-owners?status=PAID&page=1&limit=50
+Authorization: Bearer TU_JWT_ADMIN
+```
+
+Ejemplo de respuesta:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "raffle": {
+      "_id": "67d3f0f4e72d9a0012345000",
+      "name": "Sorteo Taco Predator Mayo",
+      "ticketPrice": 10000,
+      "totalTickets": 100,
+      "status": "ACTIVE",
+      "winnerTicket": "27",
+      "winner": {
+        "_id": "67d3f0f4e72d9a0012345999",
+        "name": "Juan Perez"
+      }
+    },
+    "total": 2,
+    "page": 1,
+    "limit": 50,
+    "appliedStatusFilter": "PAID",
+    "numbers": [
+      {
+        "number": "14",
+        "status": "PAID",
+        "user": {
+          "_id": "69c2e9f5c5e5549c6d703782",
+          "name": "Carlos Gomez",
+          "phone": "+573001234567"
+        },
+        "ticket": {
+          "status": "PAID",
+          "paymentStatus": "APPROVED",
+          "paymentReference": "RAFFLE-ABC123"
+        }
+      }
+    ]
+  }
+}
+```
+
+Este endpoint es util para:
+
+- ver quien compro cada numero en rifas pagas
+- ver quien obtuvo cada numero en rifas gratuitas
+- identificar rapidamente el ganador y la compra ganadora
 
 ## Endpoint para checkout de Wompi
 
@@ -229,8 +373,14 @@ Respuesta esperada:
     "amountInCents": 3000000,
     "currency": "COP",
     "reservationExpiresAt": "2026-03-14T22:00:00.000Z",
+    "expirationTime": "2026-03-14T22:00:00.000Z",
     "redirectUrl": "http://localhost:5173/payments/wompi",
     "checkoutUrl": "https://checkout.wompi.co/p/",
+
+    Regla importante:
+
+    - El backend envia `expirationTime` a Wompi con el mismo vencimiento de la reserva.
+    - Si aun asi Wompi reporta un pago aprobado fuera de tiempo, el backend no asigna los numeros y deja la transaccion para revision o devolucion manual.
     "widgetUrl": "https://checkout.wompi.co/widget.js",
     "publicKey": "pub_test_...",
     "signature": {

@@ -1,9 +1,11 @@
 import type { Request, Response } from "express";
 import {
   createRaffleService,
+  deleteRaffleService,
   drawRaffleService,
   getAvailableRaffleNumbersService,
   getRaffleByIdService,
+  getRaffleNumberOwnersService,
   getRaffleNumbersService,
   listRafflesService,
   purchaseRaffleTicketsService,
@@ -20,6 +22,16 @@ export async function createRaffle(req: Request, res: Response) {
     res.status(201).json({ ok: true, data: raffle });
   } catch (error: any) {
     res.status(400).json({ ok: false, message: error.message });
+  }
+}
+
+export async function deleteRaffle(req: Request, res: Response) {
+  try {
+    const result = await deleteRaffleService(req.params.id as string);
+    res.json({ ok: true, message: "Rifa eliminada correctamente.", data: result });
+  } catch (error: any) {
+    const status = error.message === "Rifa no encontrada." ? 404 : 400;
+    res.status(status).json({ ok: false, message: error.message });
   }
 }
 
@@ -81,6 +93,22 @@ export async function getAvailableRaffleNumbers(req: Request, res: Response) {
   }
 }
 
+export async function getRaffleNumberOwners(req: Request, res: Response) {
+  try {
+    const { status, page = "1", limit = "100" } = req.query;
+    const result = await getRaffleNumberOwnersService(req.params.id as string, {
+      ...(status !== undefined && { status: status as string }),
+      page: Number(page),
+      limit: Number(limit),
+    });
+
+    res.json({ ok: true, data: result });
+  } catch (error: any) {
+    const status = error.message === "Rifa no encontrada." ? 404 : 400;
+    res.status(status).json({ ok: false, message: error.message });
+  }
+}
+
 export async function purchaseRaffleTickets(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -93,7 +121,7 @@ export async function purchaseRaffleTickets(req: Request, res: Response) {
       req.user,
       req.body as {
         userId?: string;
-        numbers: Array<string | number>;
+        numbers?: Array<string | number>;
         channel?: string;
         paymentMethod?: string;
         paymentReference?: string;

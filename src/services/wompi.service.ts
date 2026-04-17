@@ -119,6 +119,8 @@ export function normalizeWompiTransactionStatus(status?: string) {
       return PaymentTransactionStatus.VOIDED;
     case PaymentTransactionStatus.ERROR:
       return PaymentTransactionStatus.ERROR;
+    case PaymentTransactionStatus.EXPIRED:
+      return PaymentTransactionStatus.EXPIRED;
     default:
       return PaymentTransactionStatus.PENDING;
   }

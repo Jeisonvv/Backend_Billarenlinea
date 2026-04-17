@@ -2,7 +2,7 @@ import mongoose, { Document, Model, Schema } from "mongoose";
 import { Channel, PaymentMethod, PaymentProvider, PaymentTransactionStatus, RaffleNumberStatus, TicketStatus } from "./enums.js";
 import Raffle from "./raffle.model.js";
 import RaffleNumber, { normalizeRaffleNumberInput } from "./raffle-number.model.js";
-import User from "./user.model.js";
+import User, { normalizeIdentityDocument } from "./user.model.js";
 
 const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
 
@@ -54,6 +54,7 @@ export interface IRaffleTicket {
   paymentStatus?: PaymentTransactionStatus;
   paymentTransactionId?: string;
   reservedUntil?: Date;
+  participantIdentityDocument?: string | undefined;
 
   channel: Channel; // Por qué canal compró (WhatsApp, web, etc.)
 
@@ -151,6 +152,11 @@ const raffleTicketSchema = new Schema<
     paymentReference: String,
     paidAt: Date,
     reservedUntil: Date,
+    participantIdentityDocument: {
+      type: String,
+      set: normalizeIdentityDocument,
+      select: false,
+    },
     channel: {
       type: String,
       enum: Object.values(Channel),
@@ -194,6 +200,8 @@ raffleTicketSchema.pre("validate", async function () {
       throw new Error("El usuario debe tener documento de identidad registrado para participar en rifas gratuitas.");
     }
 
+    this.participantIdentityDocument = participant.identityDocument;
+
     if (normalizedNumbers.length !== 1) {
       throw new Error("En una rifa gratuita cada usuario solo puede obtener un número.");
     }
@@ -219,6 +227,8 @@ raffleTicketSchema.pre("validate", async function () {
     if (existingFreeTicket) {
       throw new Error("Ya existe una participación para este documento de identidad en esta rifa gratuita.");
     }
+  } else {
+    this.participantIdentityDocument = undefined;
   }
 
   const availableCount = await RaffleNumber.countDocuments({
@@ -298,6 +308,18 @@ raffleTicketSchema.index({ user: 1, status: 1 });
 
 // Para reconciliar pagos externos y evitar referencias duplicadas
 raffleTicketSchema.index({ paymentReference: 1 }, { unique: true, sparse: true });
+
+raffleTicketSchema.index(
+  { raffle: 1, participantIdentityDocument: 1 },
+  {
+    unique: true,
+    name: "free_raffle_identity_once_per_raffle",
+    partialFilterExpression: {
+      participantIdentityDocument: { $type: "string" },
+      status: { $in: [TicketStatus.RESERVED, TicketStatus.PAID, TicketStatus.WINNER] },
+    },
+  },
+);
 
 // Para liberar reservas vencidas y consultar pagos por proveedor
 raffleTicketSchema.index({ status: 1, reservedUntil: 1 });

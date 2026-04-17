@@ -36,6 +36,12 @@ interface CreateWompiCheckoutParams {
 }
 
 const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
+const RETRYABLE_PAYMENT_STATUSES = new Set<PaymentTransactionStatus>([
+  PaymentTransactionStatus.EXPIRED,
+  PaymentTransactionStatus.DECLINED,
+  PaymentTransactionStatus.VOIDED,
+  PaymentTransactionStatus.ERROR,
+]);
 
 function toObjectId(id: string, fieldName: string) {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -124,6 +130,7 @@ function getExistingRaffleResponseData(
       reference: payment.reference,
       amountInCents: payment.amountInCents,
       currency: payment.currency,
+      ...(payment.expiresAt ? { expirationTime: payment.expiresAt.toISOString() } : {}),
       redirectUrl,
       customerData: {
         email: payment.customerEmail ?? "",
@@ -365,30 +372,102 @@ export async function createWompiCheckoutForRaffle(
     idempotencyKey,
   }).lean();
 
-  if (existingPayment) {
-    if (
-      existingPayment.status !== PaymentTransactionStatus.PENDING &&
-      existingPayment.status !== PaymentTransactionStatus.APPROVED
-    ) {
-      throw new Error(`Ya existe una transacción previa para esta compra con estado ${existingPayment.status}.`);
-    }
-
-    const ticket = await RaffleTicket.findById(existingPayment.payableId)
-      .select("_id numbers total")
-      .lean();
-
-    if (!ticket) {
-      throw new Error("La transacción existente no tiene un ticket válido asociado.");
-    }
-
-    return getExistingRaffleResponseData(existingPayment, ticket, raffle);
-  }
-
   const expirationDate = new Date(Date.now() + DEFAULT_RESERVATION_MINUTES * 60 * 1000);
   const paymentReference = generatePaymentReference("RAFFLE", raffleId);
   const redirectUrl = getWompiRedirectUrl();
   const phoneData = splitPhone(user.phone ?? null);
   const channel = getCheckoutChannel(params.channel);
+
+  if (existingPayment) {
+    if (
+      existingPayment.status === PaymentTransactionStatus.PENDING ||
+      existingPayment.status === PaymentTransactionStatus.APPROVED
+    ) {
+      const ticket = await RaffleTicket.findById(existingPayment.payableId)
+        .select("_id numbers total")
+        .lean();
+
+      if (!ticket) {
+        throw new Error("La transacción existente no tiene un ticket válido asociado.");
+      }
+
+      return getExistingRaffleResponseData(existingPayment, ticket, raffle);
+    }
+
+    if (!RETRYABLE_PAYMENT_STATUSES.has(existingPayment.status)) {
+      throw new Error(`Ya existe una transacción previa para esta compra con estado ${existingPayment.status}.`);
+    }
+
+    const retryTicket = await RaffleTicket.create({
+      raffle: raffleObjectId,
+      user: userObjectId,
+      numbers: requestedNumbers,
+      status: TicketStatus.RESERVED,
+      channel,
+      isWinner: false,
+      paymentProvider: PaymentProvider.WOMPI,
+      paymentStatus: PaymentTransactionStatus.PENDING,
+      paymentReference,
+      reservedUntil: expirationDate,
+    });
+
+    try {
+      await PaymentTransaction.updateOne(
+        { _id: existingPayment._id },
+        {
+          $set: {
+            payableId: retryTicket._id,
+            reference: paymentReference,
+            amountInCents,
+            currency: "COP",
+            status: PaymentTransactionStatus.PENDING,
+            redirectUrl,
+            expiresAt: expirationDate,
+            externalTransactionId: undefined,
+            providerMethod: undefined,
+            customerEmail,
+            customerName: user.name,
+            customerPhone: user.phone,
+            metadata: {
+              raffleId,
+              numbers: requestedNumbers,
+              channel,
+              retriedFromStatus: existingPayment.status,
+            },
+          },
+        },
+      );
+    } catch (error) {
+      await cancelReservedTicket(retryTicket._id, PaymentTransactionStatus.ERROR);
+      throw error;
+    }
+
+    return {
+      paymentId: existingPayment._id,
+      ticketId: retryTicket._id,
+      status: PaymentTransactionStatus.PENDING,
+      reservationExpiresAt: expirationDate.toISOString(),
+      ...createWompiCheckoutConfig({
+        reference: paymentReference,
+        amountInCents,
+        currency: "COP",
+        expirationTime: expirationDate.toISOString(),
+        redirectUrl,
+        customerData: {
+          email: customerEmail,
+          ...(user.name ? { fullName: user.name } : {}),
+          ...(phoneData ?? {}),
+        },
+      }),
+      raffle: {
+        id: raffle._id,
+        name: raffle.name,
+        ticketPrice: raffle.ticketPrice,
+        numbers: retryTicket.numbers,
+        total: retryTicket.total,
+      },
+    };
+  }
 
   const ticket = await RaffleTicket.create({
     raffle: raffleObjectId,
@@ -439,6 +518,7 @@ export async function createWompiCheckoutForRaffle(
       reference: paymentReference,
       amountInCents,
       currency: "COP",
+      expirationTime: expirationDate.toISOString(),
       redirectUrl,
       customerData: {
         email: customerEmail,
@@ -458,16 +538,60 @@ export async function createWompiCheckoutForRaffle(
 
 async function handleRafflePaymentStatus(
   payment: {
+    _id: mongoose.Types.ObjectId;
     payableId: mongoose.Types.ObjectId;
+    expiresAt?: Date;
   },
   status: PaymentTransactionStatus,
   transactionId?: string,
 ) {
   if (status === PaymentTransactionStatus.APPROVED) {
+    const ticket = await RaffleTicket.findById(payment.payableId)
+      .select("_id status reservedUntil")
+      .lean();
+
+    if (!ticket) {
+      throw new Error("Ticket no encontrado.");
+    }
+
+    const now = Date.now();
+    const paymentExpired = payment.expiresAt ? payment.expiresAt.getTime() <= now : false;
+    const reservationExpired = ticket.reservedUntil ? ticket.reservedUntil.getTime() <= now : false;
+    const ticketUnavailable = ticket.status === TicketStatus.CANCELLED;
+
+    if (paymentExpired || reservationExpired || ticketUnavailable) {
+      await PaymentTransaction.updateOne(
+        { _id: payment._id },
+        {
+          $set: {
+            status: PaymentTransactionStatus.EXPIRED,
+            ...(transactionId ? { externalTransactionId: transactionId } : {}),
+            metadata: {
+              lateApprovalBlocked: true,
+              blockedAt: new Date().toISOString(),
+              previousReservationExpired: paymentExpired || reservationExpired,
+              ticketStatus: ticket.status,
+            },
+          },
+        },
+      );
+
+      return {
+        ok: true,
+        ignored: true,
+        reason: "Pago aprobado fuera del tiempo de reserva. No se asignaron números.",
+      };
+    }
+
     return markReservedTicketAsPaid(payment.payableId, transactionId);
   }
 
-  if ([PaymentTransactionStatus.DECLINED, PaymentTransactionStatus.VOIDED, PaymentTransactionStatus.ERROR].includes(status)) {
+  if ([
+    PaymentTransactionStatus.DECLINED,
+    PaymentTransactionStatus.VOIDED,
+    PaymentTransactionStatus.ERROR,
+    PaymentTransactionStatus.EXPIRED,
+  ].includes(status)) {
     return cancelReservedTicket(payment.payableId, status, transactionId);
   }
 

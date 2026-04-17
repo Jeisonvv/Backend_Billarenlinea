@@ -7,16 +7,20 @@
  *   GET  /                   → Listar rifas
  *   GET  /:id                → Detalle de una rifa
  *   GET  /:id/numbers        → Listar números de la rifa
+ *   GET  /:id/number-owners  → Listar números asignados con dueño
  *   GET  /:id/available-numbers → Listar números disponibles
  *   POST /:id/tickets        → Reservar o registrar compra de boletos
  *   POST /:id/draw           → Ejecutar sorteo y marcar ganador
+ *   DELETE /:id              → Eliminar rifa y datos relacionados si es seguro
  */
 import { Router } from "express";
 import {
   createRaffle,
+  deleteRaffle,
   drawRaffle,
   getAvailableRaffleNumbers,
   getRaffleById,
+  getRaffleNumberOwners,
   getRaffleNumbers,
   getRaffles,
   purchaseRaffleTickets,
@@ -32,9 +36,11 @@ router.post("/", ...adminOrStaff, createRaffle);
 router.get("/", getRaffles);
 router.get("/:id", getRaffleById);
 router.get("/:id/numbers", getRaffleNumbers);
+router.get("/:id/number-owners", ...adminOrStaff, getRaffleNumberOwners);
 router.get("/:id/available-numbers", getAvailableRaffleNumbers);
 router.post("/:id/tickets", requireAuth, purchaseRaffleTickets);
 router.post("/:id/wompi/checkout", requireAuth, createWompiCheckout);
 router.post("/:id/draw", ...adminOrStaff, drawRaffle);
+router.delete("/:id", ...adminOrStaff, deleteRaffle);
 
 export default router;
