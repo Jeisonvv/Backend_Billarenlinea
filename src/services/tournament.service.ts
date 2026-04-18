@@ -3,7 +3,8 @@ import Tournament from "../models/tournament.model.js";
 import TournamentRegistration from "../models/tournament-registration.model.js";
 import TournamentGroup from "../models/tournament-group.model.js";
 import Match from "../models/match.model.js";
-import { RegistrationStatus, RoundType } from "../models/enums.js";
+import User from "../models/user.model.js";
+import { Channel, PlayerCategory, RegistrationStatus, RoundType, TournamentStatus } from "../models/enums.js";
 import {
   generateBracket,
   createGroups,
@@ -26,6 +27,32 @@ export interface ListTournamentsParams {
   limit: number;
 }
 
+interface RegisterTournamentParams {
+  handicap?: number;
+  playerCategory?: string;
+  channel?: string;
+  notes?: string;
+}
+
+function mapTournamentRegistrationForResponse(registration: any) {
+  const user = registration.user && typeof registration.user === "object"
+    ? registration.user
+    : null;
+
+  return {
+    ...registration,
+    user: user
+      ? {
+        _id: user._id,
+        name: user.name ?? null,
+        phone: user.phone ?? null,
+        avatarUrl: user.avatarUrl ?? null,
+        playerCategory: user.playerCategory ?? registration.playerCategory ?? null,
+      }
+      : registration.user,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVICIOS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +64,110 @@ export async function createTournamentService(data: Record<string, unknown>) {
   return Tournament.create(data);
 }
 
+function resolveTournamentChannel(channel?: string) {
+  if (!channel) return Channel.WEB;
+
+  if (!Object.values(Channel).includes(channel as Channel)) {
+    throw new Error("Canal de inscripción inválido.");
+  }
+
+  return channel as Channel;
+}
+
+function resolveTournamentPlayerCategory(
+  inputCategory: string | undefined,
+  userCategory: string | undefined,
+) {
+  const resolvedCategory = inputCategory ?? userCategory;
+
+  if (!resolvedCategory) {
+    throw new Error("El jugador debe tener categoría registrada para inscribirse al torneo.");
+  }
+
+  if (!Object.values(PlayerCategory).includes(resolvedCategory as PlayerCategory)) {
+    throw new Error("La categoría del jugador es inválida.");
+  }
+
+  return resolvedCategory as PlayerCategory;
+}
+
+async function createTournamentRegistration(
+  tournamentId: string,
+  userId: string,
+  data: RegisterTournamentParams,
+) {
+  const tournament = await Tournament.findById(tournamentId);
+  if (!tournament) throw new Error("Torneo no encontrado.");
+
+  if (tournament.status !== TournamentStatus.OPEN) {
+    throw new Error("El torneo no tiene inscripciones abiertas.");
+  }
+
+  if (new Date() > tournament.registrationDeadline) {
+    throw new Error("La fecha límite de inscripción ya venció.");
+  }
+
+  if (tournament.currentParticipants >= tournament.maxParticipants) {
+    throw new Error("El torneo ya alcanzó el máximo de participantes confirmados.");
+  }
+
+  const user = await User.findById(userId)
+    .select("_id deletedAt playerCategory")
+    .lean();
+
+  if (!user || user.deletedAt) {
+    throw new Error("Usuario no encontrado.");
+  }
+
+  const playerCategory = resolveTournamentPlayerCategory(data.playerCategory, user.playerCategory);
+
+  if (tournament.allowedCategories.length > 0 && !tournament.allowedCategories.includes(playerCategory)) {
+    throw new Error("La categoría del jugador no está permitida en este torneo.");
+  }
+
+  if (!tournament.withHandicap && data.handicap !== undefined) {
+    throw new Error("Este torneo no usa handicap. No envíes el campo 'handicap'.");
+  }
+
+  const finalHandicap = tournament.withHandicap
+    ? (data.handicap ?? 12)
+    : undefined;
+
+  const existing = await TournamentRegistration.findOne({
+    tournament: tournamentId,
+    user: userId,
+  });
+  if (existing) throw new Error("El jugador ya está inscrito en este torneo.");
+
+  const status = tournament.entryFee === 0
+    ? RegistrationStatus.CONFIRMED
+    : RegistrationStatus.PENDING;
+
+  const registration = await TournamentRegistration.create({
+    tournament: tournamentId,
+    user: userId,
+    status,
+    playerCategory,
+    channel: resolveTournamentChannel(data.channel),
+    ...(finalHandicap !== undefined && { handicap: finalHandicap }),
+    ...(data.notes !== undefined && { notes: data.notes }),
+    ...(status === RegistrationStatus.CONFIRMED && { paidAt: new Date() }),
+  });
+
+  if (status === RegistrationStatus.CONFIRMED) {
+    await Tournament.updateOne(
+      { _id: tournament._id },
+      { $inc: { currentParticipants: 1 } },
+    );
+  }
+
+  const populatedRegistration = await TournamentRegistration.findById(registration._id)
+    .populate("user", "name phone avatarUrl playerCategory")
+    .lean();
+
+  return mapTournamentRegistrationForResponse(populatedRegistration);
+}
+
 /**
  * Inscribe a un jugador en un torneo.
  * Si el torneo es withHandicap: true, el handicap es obligatorio.
@@ -44,43 +175,17 @@ export async function createTournamentService(data: Record<string, unknown>) {
 export async function registerPlayerService(
   tournamentId: string,
   userId: string,
-  data: {
-    handicap?: number;
-    category?: string;
-    channel?: string;
-    notes?: string;
-  }
+  data: RegisterTournamentParams
 ) {
-  const tournament = await Tournament.findById(tournamentId);
-  if (!tournament) throw new Error("Torneo no encontrado.");
+  return createTournamentRegistration(tournamentId, userId, data);
+}
 
-  if (!tournament.withHandicap && data.handicap !== undefined) {
-    throw new Error("Este torneo no usa handicap. No envíes el campo 'handicap'.");
-  }
-
-  // Si el torneo usa handicap y no se proporcionó, usar 12 por defecto
-  const finalHandicap = tournament.withHandicap
-    ? (data.handicap ?? 12)
-    : undefined;
-
-  // Verificar que no esté ya inscrito
-  const existing = await TournamentRegistration.findOne({
-    tournament: tournamentId,
-    user: userId,
-  });
-  if (existing) throw new Error("El jugador ya está inscrito en este torneo.");
-
-  const registration = await TournamentRegistration.create({
-    tournament: tournamentId,
-    user: userId,
-    status: RegistrationStatus.PENDING,
-    channel: data.channel ?? "WEB",
-    ...(finalHandicap !== undefined && { handicap: finalHandicap }),
-    ...(data.category !== undefined && { category: data.category }),
-    ...(data.notes !== undefined && { notes: data.notes }),
-  });
-
-  return registration;
+export async function selfRegisterToTournamentService(
+  tournamentId: string,
+  userId: string,
+  data: RegisterTournamentParams,
+) {
+  return createTournamentRegistration(tournamentId, userId, data);
 }
 
 /**
@@ -121,7 +226,7 @@ export async function getTournamentByIdService(id: string) {
 
   const [registrations, groups] = await Promise.all([
     TournamentRegistration.find({ tournament: tournament._id })
-      .populate("user", "name avatarUrl playerCategory")
+      .populate("user", "name phone avatarUrl playerCategory")
       .lean(),
     TournamentGroup.find({ tournament: tournament._id })
       .populate("players", "name avatarUrl")
@@ -135,7 +240,7 @@ export async function getTournamentByIdService(id: string) {
 
   return {
     ...tournament,
-    registrations,
+    registrations: registrations.map(mapTournamentRegistrationForResponse),
     totalRegistrations: registrations.length,
     confirmedRegistrations: confirmedCount,
     groups: groups.map((g) => ({ totalPlayers: g.players.length, ...g })),
@@ -153,10 +258,12 @@ export async function getTournamentRegistrationsService(
   const filter: Record<string, unknown> = { tournament: tournamentId };
   if (status) filter.status = status;
 
-  return TournamentRegistration.find(filter)
+  const registrations = await TournamentRegistration.find(filter)
     .populate("user", "name phone avatarUrl playerCategory")
     .sort({ createdAt: -1 })
     .lean();
+
+  return registrations.map(mapTournamentRegistrationForResponse);
 }
 
 /**

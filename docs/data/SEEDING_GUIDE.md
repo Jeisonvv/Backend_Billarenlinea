@@ -347,7 +347,9 @@ X-Bot-Token: TU_BOT_API_KEY
 | `GET` | `/api/tournaments` | ❌ Público | Listar torneos |
 | `GET` | `/api/tournaments/:id` | ❌ Público | Detalle completo del torneo |
 | `GET` | `/api/tournaments/:id/registrations` | ❌ Público | Lista de inscritos |
+| `POST` | `/api/tournaments/:id/register-self` | ✅ Usuario autenticado | Autoinscribirse al torneo |
 | `POST` | `/api/tournaments/:id/register` | STAFF+ | Inscribir jugador |
+| `POST` | `/api/tournaments/:id/wompi/checkout` | ✅ Usuario autenticado | Crear o reutilizar checkout Wompi para pagar la inscripción pendiente |
 | `PATCH` | `/api/tournaments/:id/registrations/:userId/handicap` | STAFF+ | Actualizar hándicap |
 | `GET` | `/api/tournaments/:id/bracket` | ❌ Público | Ver bracket |
 | `GET` | `/api/tournaments/:id/results` | ❌ Público | Resultados del torneo |
@@ -362,6 +364,63 @@ X-Bot-Token: TU_BOT_API_KEY
 | `POST` | `/api/tournaments/:id/generate-adjustment-round` | STAFF+ | Generar ronda de ajuste |
 | `POST` | `/api/tournaments/:id/generate-bracket-from-groups` | STAFF+ | Bracket desde clasificados de grupo |
 | `POST` | `/api/tournaments/:id/notify-groups` | STAFF+ | Preparar notificaciones por grupo |
+
+---
+
+#### Pago de inscripción por Wompi
+
+Ruta:
+
+```http
+POST /api/tournaments/:id/wompi/checkout
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Body mínimo cuando el usuario ya está inscrito en estado `PENDING`:
+
+```json
+{
+  "channel": "WEB"
+}
+```
+
+Body opcional si todavía no existe la inscripción y quieres crearla en el mismo paso:
+
+```json
+{
+  "channel": "WEB",
+  "playerCategory": "PRIMERA",
+  "handicap": 30,
+  "notes": "Pago desde checkout web"
+}
+```
+
+Comportamiento:
+
+- Si la inscripción pagada no existe, el backend la crea primero en estado `PENDING`.
+- Si ya existe una transacción Wompi pendiente o aprobada para esa inscripción, el backend la reutiliza.
+- El checkout usa la tarifa vigente según el torneo: `DISCOUNT_20`, `DISCOUNT_10` o `FULL`.
+- La expiración del checkout queda en la fecha de la promoción vigente. Si no hay promoción activa, vence en la fecha límite final de pago, que es el día anterior al torneo o `registrationDeadline`, lo que ocurra primero.
+- Cuando Wompi envía el webhook de aprobación dentro de la vigencia del checkout, la inscripción pasa a `CONFIRMED`, guarda `paidAt` y aumenta `currentParticipants` del torneo.
+
+Campos opcionales del torneo para promociones:
+
+```json
+{
+  "entryFee": 100000,
+  "discount20Deadline": "2026-04-28T23:59:59.999Z",
+  "discount10Deadline": "2026-04-30T23:59:59.999Z"
+}
+```
+
+Reglas:
+
+- Si ambos campos vienen vacíos o no se envían, no hay descuento.
+- Hasta `discount20Deadline` el checkout sale con 20% de descuento.
+- Después, y hasta `discount10Deadline`, sale con 10% de descuento.
+- Después de esa fecha, sale a tarifa plena.
+- Ningún checkout puede vencer después del día anterior al torneo.
 
 ---
 

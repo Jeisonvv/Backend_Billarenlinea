@@ -4,15 +4,20 @@ import PaymentTransaction from "../models/payment-transaction.model.js";
 import Raffle from "../models/raffle.model.js";
 import RaffleNumber, { normalizeRaffleNumberInput } from "../models/raffle-number.model.js";
 import RaffleTicket from "../models/raffle-ticket.model.js";
+import Tournament from "../models/tournament.model.js";
+import TournamentRegistration from "../models/tournament-registration.model.js";
 import User from "../models/user.model.js";
 import {
   Channel,
+  PaymentMethod,
   PaymentPayableType,
   PaymentProvider,
   PaymentTransactionStatus,
   RaffleNumberStatus,
   RaffleStatus,
+  RegistrationStatus,
   TicketStatus,
+  TournamentStatus,
   UserRole,
 } from "../models/enums.js";
 import {
@@ -23,6 +28,7 @@ import {
   type WompiEventPayload,
   verifyWompiEvent,
 } from "./wompi.service.js";
+import { selfRegisterToTournamentService } from "./tournament.service.js";
 
 interface ActorContext {
   id: string;
@@ -33,6 +39,25 @@ interface CreateWompiCheckoutParams {
   userId?: string;
   numbers: Array<string | number>;
   channel?: string;
+}
+
+interface CreateTournamentWompiCheckoutParams {
+  userId?: string;
+  channel?: string;
+  playerCategory?: string;
+  handicap?: number;
+  notes?: string;
+}
+
+type TournamentPricingType = "DISCOUNT_20" | "DISCOUNT_10" | "FULL";
+
+interface TournamentCheckoutPricing {
+  pricingType: TournamentPricingType;
+  discountPercentage: 0 | 10 | 20;
+  originalAmount: number;
+  finalAmount: number;
+  amountInCents: number;
+  expiresAt: Date;
 }
 
 const DEFAULT_RESERVATION_MINUTES = Number(process.env.RAFFLE_RESERVATION_MINUTES ?? 15);
@@ -93,6 +118,91 @@ function buildRaffleIdempotencyKey(userId: string, raffleId: string, numbers: st
   return sha256Hex(`RAFFLE|${userId}|${raffleId}|${normalizedNumbers.join(",")}`);
 }
 
+function buildTournamentIdempotencyKey(userId: string, tournamentId: string) {
+  return sha256Hex(`TOURNAMENT|${userId}|${tournamentId}`);
+}
+
+function getEarlierDate(left: Date, right: Date) {
+  return left.getTime() <= right.getTime() ? left : right;
+}
+
+function getTournamentFinalPaymentDeadline(tournament: {
+  startDate: Date;
+  registrationDeadline: Date;
+}) {
+  const oneDayBeforeStart = new Date(tournament.startDate.getTime() - 24 * 60 * 60 * 1000);
+  return getEarlierDate(oneDayBeforeStart, tournament.registrationDeadline);
+}
+
+function resolveTournamentCheckoutPricing(tournament: {
+  entryFee: number;
+  startDate: Date;
+  registrationDeadline: Date;
+  discount20Deadline?: Date;
+  discount10Deadline?: Date;
+}) {
+  const now = new Date();
+  const finalPaymentDeadline = getTournamentFinalPaymentDeadline(tournament);
+
+  if (now.getTime() > finalPaymentDeadline.getTime()) {
+    throw new Error("La fecha límite de pago de la inscripción ya venció.");
+  }
+
+  const originalAmount = tournament.entryFee;
+
+  if (tournament.discount20Deadline && now.getTime() <= tournament.discount20Deadline.getTime()) {
+    const expiresAt = getEarlierDate(tournament.discount20Deadline, finalPaymentDeadline);
+    const finalAmount = Math.round(originalAmount * 0.8);
+
+    return {
+      pricingType: "DISCOUNT_20",
+      discountPercentage: 20,
+      originalAmount,
+      finalAmount,
+      amountInCents: finalAmount * 100,
+      expiresAt,
+    } satisfies TournamentCheckoutPricing;
+  }
+
+  if (tournament.discount10Deadline && now.getTime() <= tournament.discount10Deadline.getTime()) {
+    const expiresAt = getEarlierDate(tournament.discount10Deadline, finalPaymentDeadline);
+    const finalAmount = Math.round(originalAmount * 0.9);
+
+    return {
+      pricingType: "DISCOUNT_10",
+      discountPercentage: 10,
+      originalAmount,
+      finalAmount,
+      amountInCents: finalAmount * 100,
+      expiresAt,
+    } satisfies TournamentCheckoutPricing;
+  }
+
+  return {
+    pricingType: "FULL",
+    discountPercentage: 0,
+    originalAmount,
+    finalAmount: originalAmount,
+    amountInCents: originalAmount * 100,
+    expiresAt: finalPaymentDeadline,
+  } satisfies TournamentCheckoutPricing;
+}
+
+function mapWompiProviderMethodToPaymentMethod(method?: string) {
+  switch ((method ?? "").toUpperCase()) {
+    case PaymentMethod.CARD:
+      return PaymentMethod.CARD;
+    case PaymentMethod.NEQUI:
+      return PaymentMethod.NEQUI;
+    case PaymentMethod.DAVIPLATA:
+      return PaymentMethod.DAVIPLATA;
+    case PaymentMethod.TRANSFER:
+      return PaymentMethod.TRANSFER;
+    default:
+      return undefined;
+  }
+}
+
 function getExistingRaffleResponseData(
   payment: {
     _id: mongoose.Types.ObjectId;
@@ -118,7 +228,7 @@ function getExistingRaffleResponseData(
   },
 ) {
   const phoneData = splitPhone(payment.customerPhone);
-  const redirectUrl = payment.redirectUrl ?? getWompiRedirectUrl();
+  const redirectUrl = payment.redirectUrl ?? getWompiRedirectUrl("raffles");
 
   return {
     paymentId: payment._id,
@@ -144,6 +254,88 @@ function getExistingRaffleResponseData(
       ticketPrice: raffle.ticketPrice,
       numbers: ticket.numbers,
       total: ticket.total,
+    },
+  };
+}
+
+function getExistingTournamentResponseData(
+  payment: {
+    _id: mongoose.Types.ObjectId;
+    reference: string;
+    amountInCents: number;
+    currency: string;
+    redirectUrl?: string;
+    expiresAt?: Date;
+    status: PaymentTransactionStatus;
+    customerEmail?: string;
+    customerName?: string;
+    customerPhone?: string;
+    metadata?: Record<string, unknown>;
+  },
+  registration: {
+    _id: mongoose.Types.ObjectId;
+    status: RegistrationStatus;
+    playerCategory: string;
+    handicap?: number;
+  },
+  tournament: {
+    _id: mongoose.Types.ObjectId;
+    name: string;
+    entryFee: number;
+    startDate: Date;
+  },
+) {
+  const phoneData = splitPhone(payment.customerPhone);
+  const redirectUrl = payment.redirectUrl ?? getWompiRedirectUrl("tournaments");
+  const pricingType = typeof payment.metadata?.pricingType === "string"
+    ? payment.metadata.pricingType
+    : "FULL";
+  const discountPercentage = typeof payment.metadata?.discountPercentage === "number"
+    ? payment.metadata.discountPercentage
+    : 0;
+  const originalAmount = typeof payment.metadata?.originalAmount === "number"
+    ? payment.metadata.originalAmount
+    : tournament.entryFee;
+  const finalAmount = typeof payment.metadata?.finalAmount === "number"
+    ? payment.metadata.finalAmount
+    : payment.amountInCents / 100;
+
+  return {
+    paymentId: payment._id,
+    registrationId: registration._id,
+    status: payment.status,
+    alreadyProcessed: payment.status === PaymentTransactionStatus.APPROVED,
+    ...(payment.expiresAt ? { paymentExpiresAt: payment.expiresAt.toISOString() } : {}),
+    ...createWompiCheckoutConfig({
+      reference: payment.reference,
+      amountInCents: payment.amountInCents,
+      currency: payment.currency,
+      ...(payment.expiresAt ? { expirationTime: payment.expiresAt.toISOString() } : {}),
+      redirectUrl,
+      customerData: {
+        email: payment.customerEmail ?? "",
+        ...(payment.customerName ? { fullName: payment.customerName } : {}),
+        ...(phoneData ?? {}),
+      },
+    }),
+    tournament: {
+      id: tournament._id,
+      name: tournament.name,
+      entryFee: tournament.entryFee,
+      startDate: tournament.startDate,
+      pricing: {
+        type: pricingType,
+        discountPercentage,
+        originalAmount,
+        finalAmount,
+        ...(payment.expiresAt ? { validUntil: payment.expiresAt.toISOString() } : {}),
+      },
+    },
+    registration: {
+      id: registration._id,
+      status: registration.status,
+      playerCategory: registration.playerCategory,
+      ...(registration.handicap !== undefined && { handicap: registration.handicap }),
     },
   };
 }
@@ -374,7 +566,7 @@ export async function createWompiCheckoutForRaffle(
 
   const expirationDate = new Date(Date.now() + DEFAULT_RESERVATION_MINUTES * 60 * 1000);
   const paymentReference = generatePaymentReference("RAFFLE", raffleId);
-  const redirectUrl = getWompiRedirectUrl();
+  const redirectUrl = getWompiRedirectUrl("raffles");
   const phoneData = splitPhone(user.phone ?? null);
   const channel = getCheckoutChannel(params.channel);
 
@@ -536,6 +728,274 @@ export async function createWompiCheckoutForRaffle(
   };
 }
 
+export async function createWompiCheckoutForTournament(
+  tournamentId: string,
+  actor: ActorContext,
+  params: CreateTournamentWompiCheckoutParams,
+) {
+  if (actor.role === UserRole.CUSTOMER && params.handicap !== undefined) {
+    throw new Error("El handicap solo puede ser asignado por un administrador o staff.");
+  }
+
+  const tournamentObjectId = toObjectId(tournamentId, "Tournament ID");
+  const tournament = await Tournament.findById(tournamentObjectId)
+    .select("_id name entryFee status registrationDeadline currentParticipants maxParticipants startDate discount20Deadline discount10Deadline")
+    .lean();
+
+  if (!tournament) {
+    throw new Error("Torneo no encontrado.");
+  }
+
+  if (tournament.status !== TournamentStatus.OPEN) {
+    throw new Error("El torneo no tiene inscripciones abiertas.");
+  }
+
+  if (new Date() > tournament.registrationDeadline) {
+    throw new Error("La fecha límite de inscripción ya venció.");
+  }
+
+  if (tournament.entryFee <= 0) {
+    throw new Error("El torneo es gratuito y no requiere checkout.");
+  }
+
+  const pricing = resolveTournamentCheckoutPricing(tournament);
+
+  const targetUserId = params.userId ?? actor.id;
+  if (params.userId && actor.role === UserRole.CUSTOMER && params.userId !== actor.id) {
+    throw new Error("No puedes crear un checkout para otro usuario.");
+  }
+
+  const userObjectId = toObjectId(targetUserId, "User ID");
+  const user = await User.findById(userObjectId)
+    .select("name phone webAuth.email deletedAt")
+    .lean();
+
+  if (!user || user.deletedAt) {
+    throw new Error("Usuario no encontrado.");
+  }
+
+  const customerEmail = user.webAuth?.email?.trim();
+  if (!customerEmail) {
+    throw new Error("El usuario necesita un email para pagar con Wompi.");
+  }
+
+  let registration = await TournamentRegistration.findOne({
+    tournament: tournamentObjectId,
+    user: userObjectId,
+  })
+    .select("_id status playerCategory handicap")
+    .lean();
+
+  if (!registration) {
+    const createdRegistration = await selfRegisterToTournamentService(
+      tournamentId,
+      targetUserId,
+      {
+        ...(params.playerCategory !== undefined && { playerCategory: params.playerCategory }),
+        ...(params.handicap !== undefined && { handicap: params.handicap }),
+        ...(params.channel !== undefined && { channel: params.channel }),
+        ...(params.notes !== undefined && { notes: params.notes }),
+      },
+    );
+
+    registration = await TournamentRegistration.findById(createdRegistration._id)
+      .select("_id status playerCategory handicap")
+      .lean();
+  }
+
+  if (!registration) {
+    throw new Error("No fue posible preparar la inscripción del torneo.");
+  }
+
+  if (registration.status === RegistrationStatus.CONFIRMED) {
+    throw new Error("La inscripción de este jugador ya está confirmada.");
+  }
+
+  if (registration.status === RegistrationStatus.CANCELLED) {
+    throw new Error("La inscripción fue cancelada y no admite pago.");
+  }
+
+  const amountInCents = pricing.amountInCents;
+  if (amountInCents <= 0) {
+    throw new Error("El monto del checkout debe ser mayor a 0.");
+  }
+
+  const idempotencyKey = buildTournamentIdempotencyKey(targetUserId, tournamentId);
+  const existingPayment = await PaymentTransaction.findOne({
+    provider: PaymentProvider.WOMPI,
+    idempotencyKey,
+  }).lean();
+
+  const paymentReference = generatePaymentReference("TOURNAMENT", tournamentId);
+  const redirectUrl = getWompiRedirectUrl("tournaments");
+  const phoneData = splitPhone(user.phone ?? null);
+  const channel = getCheckoutChannel(params.channel);
+  const now = Date.now();
+
+  if (existingPayment) {
+    if (existingPayment.status === PaymentTransactionStatus.APPROVED) {
+      return getExistingTournamentResponseData(existingPayment, registration, tournament);
+    }
+
+    if (existingPayment.status === PaymentTransactionStatus.PENDING) {
+      const isStillValid = existingPayment.expiresAt
+        ? existingPayment.expiresAt.getTime() > now
+        : false;
+
+      if (isStillValid) {
+        return getExistingTournamentResponseData(existingPayment, registration, tournament);
+      }
+    }
+
+    if (
+      existingPayment.status !== PaymentTransactionStatus.PENDING &&
+      !RETRYABLE_PAYMENT_STATUSES.has(existingPayment.status)
+    ) {
+      throw new Error(`Ya existe una transacción previa para esta inscripción con estado ${existingPayment.status}.`);
+    }
+
+    await PaymentTransaction.updateOne(
+      { _id: existingPayment._id },
+      {
+        $set: {
+          payableId: registration._id,
+          reference: paymentReference,
+          amountInCents,
+          currency: "COP",
+          status: PaymentTransactionStatus.PENDING,
+          redirectUrl,
+          expiresAt: pricing.expiresAt,
+          externalTransactionId: undefined,
+          providerMethod: undefined,
+          customerEmail,
+          customerName: user.name,
+          customerPhone: user.phone,
+          metadata: {
+            tournamentId,
+            registrationId: registration._id.toString(),
+            channel,
+            pricingType: pricing.pricingType,
+            discountPercentage: pricing.discountPercentage,
+            originalAmount: pricing.originalAmount,
+            finalAmount: pricing.finalAmount,
+            retriedFromStatus: existingPayment.status,
+          },
+        },
+      },
+    );
+
+    return {
+      paymentId: existingPayment._id,
+      registrationId: registration._id,
+      status: PaymentTransactionStatus.PENDING,
+      paymentExpiresAt: pricing.expiresAt.toISOString(),
+      ...createWompiCheckoutConfig({
+        reference: paymentReference,
+        amountInCents,
+        currency: "COP",
+        expirationTime: pricing.expiresAt.toISOString(),
+        redirectUrl,
+        customerData: {
+          email: customerEmail,
+          ...(user.name ? { fullName: user.name } : {}),
+          ...(phoneData ?? {}),
+        },
+      }),
+      tournament: {
+        id: tournament._id,
+        name: tournament.name,
+        entryFee: tournament.entryFee,
+        startDate: tournament.startDate,
+        pricing: {
+          type: pricing.pricingType,
+          discountPercentage: pricing.discountPercentage,
+          originalAmount: pricing.originalAmount,
+          finalAmount: pricing.finalAmount,
+          validUntil: pricing.expiresAt.toISOString(),
+        },
+      },
+      registration: {
+        id: registration._id,
+        status: registration.status,
+        playerCategory: registration.playerCategory,
+        ...(registration.handicap !== undefined && { handicap: registration.handicap }),
+      },
+    };
+  }
+
+  const paymentData: Record<string, unknown> = {
+    user: userObjectId,
+    provider: PaymentProvider.WOMPI,
+    payableType: PaymentPayableType.TOURNAMENT_REGISTRATION,
+    payableId: registration._id,
+    idempotencyKey,
+    reference: paymentReference,
+    amountInCents,
+    currency: "COP",
+    status: PaymentTransactionStatus.PENDING,
+    redirectUrl,
+    expiresAt: pricing.expiresAt,
+    customerEmail,
+    metadata: {
+      tournamentId,
+      registrationId: registration._id.toString(),
+      channel,
+      pricingType: pricing.pricingType,
+      discountPercentage: pricing.discountPercentage,
+      originalAmount: pricing.originalAmount,
+      finalAmount: pricing.finalAmount,
+    },
+  };
+
+  if (user.name) {
+    paymentData.customerName = user.name;
+  }
+
+  if (user.phone) {
+    paymentData.customerPhone = user.phone;
+  }
+
+  const payment = await PaymentTransaction.create(paymentData);
+
+  return {
+    paymentId: payment._id,
+    registrationId: registration._id,
+    status: payment.status,
+    paymentExpiresAt: pricing.expiresAt.toISOString(),
+    ...createWompiCheckoutConfig({
+      reference: paymentReference,
+      amountInCents,
+      currency: "COP",
+      expirationTime: pricing.expiresAt.toISOString(),
+      redirectUrl,
+      customerData: {
+        email: customerEmail,
+        ...(user.name ? { fullName: user.name } : {}),
+        ...(phoneData ?? {}),
+      },
+    }),
+    tournament: {
+      id: tournament._id,
+      name: tournament.name,
+      entryFee: tournament.entryFee,
+      startDate: tournament.startDate,
+      pricing: {
+        type: pricing.pricingType,
+        discountPercentage: pricing.discountPercentage,
+        originalAmount: pricing.originalAmount,
+        finalAmount: pricing.finalAmount,
+        validUntil: pricing.expiresAt.toISOString(),
+      },
+    },
+    registration: {
+      id: registration._id,
+      status: registration.status,
+      playerCategory: registration.playerCategory,
+      ...(registration.handicap !== undefined && { handicap: registration.handicap }),
+    },
+  };
+}
+
 async function handleRafflePaymentStatus(
   payment: {
     _id: mongoose.Types.ObjectId;
@@ -608,6 +1068,160 @@ async function handleRafflePaymentStatus(
   return null;
 }
 
+async function handleTournamentRegistrationPaymentStatus(
+  payment: {
+    _id: mongoose.Types.ObjectId;
+    payableId: mongoose.Types.ObjectId;
+    expiresAt?: Date;
+  },
+  status: PaymentTransactionStatus,
+  transaction: {
+    id?: string;
+    reference?: string;
+    payment_method_type?: string;
+  },
+) {
+  const registration = await TournamentRegistration.findById(payment.payableId)
+    .select("_id tournament status paymentMethod paymentReference paidAt")
+    .lean();
+
+  if (!registration) {
+    throw new Error("Inscripción de torneo no encontrada.");
+  }
+
+  if (status === PaymentTransactionStatus.APPROVED) {
+    if (registration.status === RegistrationStatus.CONFIRMED) {
+      return registration;
+    }
+
+    if (payment.expiresAt && payment.expiresAt.getTime() <= Date.now()) {
+      await PaymentTransaction.updateOne(
+        { _id: payment._id },
+        {
+          $set: {
+            status: PaymentTransactionStatus.EXPIRED,
+            metadata: {
+              lateApprovalBlocked: true,
+              blockedAt: new Date().toISOString(),
+              reason: "El checkout de esta inscripción ya estaba vencido.",
+            },
+          },
+        },
+      );
+
+      return {
+        ok: true,
+        ignored: true,
+        reason: "Pago aprobado fuera de la ventana permitida. La inscripción no fue confirmada.",
+      };
+    }
+
+    const tournament = await Tournament.findById(registration.tournament)
+      .select("_id status currentParticipants maxParticipants")
+      .lean();
+
+    if (!tournament) {
+      throw new Error("Torneo no encontrado.");
+    }
+
+    if (tournament.status !== TournamentStatus.OPEN && tournament.status !== TournamentStatus.CLOSED) {
+      await PaymentTransaction.updateOne(
+        { _id: payment._id },
+        {
+          $set: {
+            status: PaymentTransactionStatus.ERROR,
+            metadata: {
+              registrationBlocked: true,
+              blockedAt: new Date().toISOString(),
+              reason: `Tournament status ${tournament.status} no permite confirmar la inscripción.`,
+            },
+          },
+        },
+      );
+
+      return {
+        ok: true,
+        ignored: true,
+        reason: "Pago aprobado pero el torneo ya no admite confirmación automática.",
+      };
+    }
+
+    const seatReserved = await Tournament.updateOne(
+      {
+        _id: tournament._id,
+        currentParticipants: { $lt: tournament.maxParticipants },
+      },
+      { $inc: { currentParticipants: 1 } },
+    );
+
+    if (seatReserved.modifiedCount === 0) {
+      await PaymentTransaction.updateOne(
+        { _id: payment._id },
+        {
+          $set: {
+            status: PaymentTransactionStatus.ERROR,
+            metadata: {
+              registrationBlocked: true,
+              blockedAt: new Date().toISOString(),
+              reason: "El torneo ya no tiene cupos disponibles para confirmar la inscripción.",
+            },
+          },
+        },
+      );
+
+      return {
+        ok: true,
+        ignored: true,
+        reason: "Pago aprobado pero el torneo ya no tiene cupos disponibles.",
+      };
+    }
+
+    const paymentMethod = mapWompiProviderMethodToPaymentMethod(transaction.payment_method_type);
+    const paidAt = new Date();
+
+    await TournamentRegistration.updateOne(
+      { _id: registration._id },
+      {
+        $set: {
+          status: RegistrationStatus.CONFIRMED,
+          paidAt,
+          ...(transaction.reference ? { paymentReference: transaction.reference } : {}),
+          ...(paymentMethod ? { paymentMethod } : {}),
+        },
+      },
+    );
+
+    return TournamentRegistration.findById(registration._id)
+      .populate("user", "name phone avatarUrl")
+      .populate("tournament", "name entryFee startDate")
+      .lean();
+  }
+
+  if ([
+    PaymentTransactionStatus.DECLINED,
+    PaymentTransactionStatus.VOIDED,
+    PaymentTransactionStatus.ERROR,
+    PaymentTransactionStatus.EXPIRED,
+  ].includes(status)) {
+    await TournamentRegistration.updateOne(
+      { _id: registration._id, status: { $ne: RegistrationStatus.CONFIRMED } },
+      {
+        $set: {
+          status: RegistrationStatus.PENDING,
+          ...(transaction.reference ? { paymentReference: transaction.reference } : {}),
+        },
+      },
+    );
+
+    return TournamentRegistration.findById(registration._id)
+      .populate("user", "name phone avatarUrl")
+      .populate("tournament", "name entryFee startDate")
+      .lean();
+  }
+
+  return null;
+}
+
 export async function handleWompiWebhook(payload: WompiEventPayload, headerChecksum?: string | string[]) {
   const isValid = verifyWompiEvent(payload, headerChecksum);
   if (!isValid) {
@@ -652,6 +1266,15 @@ export async function handleWompiWebhook(payload: WompiEventPayload, headerCheck
   switch (payment.payableType) {
     case PaymentPayableType.RAFFLE_TICKET: {
       const data = await handleRafflePaymentStatus(payment, status, transaction.id);
+      return {
+        ok: true,
+        processed: data !== null,
+        status,
+        ...(data ? { data } : {}),
+      };
+    }
+    case PaymentPayableType.TOURNAMENT_REGISTRATION: {
+      const data = await handleTournamentRegistrationPaymentStatus(payment, status, transaction);
       return {
         ok: true,
         processed: data !== null,

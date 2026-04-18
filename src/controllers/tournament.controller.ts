@@ -9,6 +9,7 @@
  *   GET  /api/tournaments                              → getTournaments
  *   GET  /api/tournaments/:id                          → getTournamentById
  *   GET  /api/tournaments/:id/registrations            → getTournamentRegistrations
+ *   POST /api/tournaments/:id/register-self            → selfRegisterToTournamentHandler
  *   POST /api/tournaments/:id/register                 → registerPlayerHandler
  *   POST /api/tournaments/:id/generate-bracket         → generateBracketHandler
  *   POST /api/tournaments/:id/groups                   → createGroupsHandler
@@ -17,12 +18,14 @@
  *   POST /api/tournaments/:id/notify-groups            → notifyGroupsHandler
  */
 import type { Request, Response } from "express";
+import Tournament from "../models/tournament.model.js";
 import {
   createTournamentService,
   listTournamentsService,
   getTournamentByIdService,
   getTournamentRegistrationsService,
   registerPlayerService,
+  selfRegisterToTournamentService,
   generateBracketService,
   createGroupsService,
   autoCreateGroupsService,
@@ -38,7 +41,9 @@ import {
   addPlayerToGroupService,
   getPendingPaymentsService,
 } from "../services/tournament.service.js";
+import { createWompiCheckoutForTournament } from "../services/payment.service.js";
 import type { GroupInput } from "../services/bracket.service.js";
+import { UserRole } from "../models/enums.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /tournaments
@@ -91,10 +96,11 @@ export async function getTournamentById(req: Request, res: Response) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function registerPlayerHandler(req: Request, res: Response) {
   try {
-    const { userId, handicap, category, channel, notes } = req.body as {
+    const { userId, handicap, category, playerCategory, channel, notes } = req.body as {
       userId: string;
       handicap?: number;
       category?: string;
+      playerCategory?: string;
       channel?: string;
       notes?: string;
     };
@@ -104,7 +110,7 @@ export async function registerPlayerHandler(req: Request, res: Response) {
       userId,
       {
         ...(handicap  !== undefined && { handicap }),
-        ...(category  !== undefined && { category }),
+        ...((playerCategory ?? category) !== undefined && { playerCategory: playerCategory ?? category }),
         ...(channel   !== undefined && { channel }),
         ...(notes     !== undefined && { notes }),
       }
@@ -112,6 +118,77 @@ export async function registerPlayerHandler(req: Request, res: Response) {
     res.status(201).json({ ok: true, data: registration });
   } catch (error: any) {
     res.status(400).json({ ok: false, message: error.message });
+  }
+}
+
+export async function selfRegisterToTournamentHandler(req: Request, res: Response) {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ ok: false, message: "No autenticado." });
+      return;
+    }
+
+    const { handicap, category, playerCategory, channel, notes } = req.body as {
+      handicap?: number;
+      category?: string;
+      playerCategory?: string;
+      channel?: string;
+      notes?: string;
+    };
+
+    if (handicap !== undefined) {
+      res.status(400).json({ ok: false, message: "El handicap solo puede ser asignado por un administrador o staff." });
+      return;
+    }
+
+    const tournament = await Tournament.findById(req.params.id as string)
+      .select("_id entryFee")
+      .lean();
+
+    if (!tournament) {
+      res.status(404).json({ ok: false, message: "Torneo no encontrado." });
+      return;
+    }
+
+    if (tournament.entryFee > 0) {
+      const checkout = await createWompiCheckoutForTournament(
+        req.params.id as string,
+        req.user,
+        {
+          ...((playerCategory ?? category) !== undefined && { playerCategory: playerCategory ?? category }),
+          ...(channel !== undefined && { channel }),
+          ...(notes !== undefined && { notes }),
+        },
+      );
+
+      res.status(200).json({
+        ok: true,
+        requiresPayment: true,
+        registrationStatus: "PENDING",
+        data: checkout,
+      });
+      return;
+    }
+
+    const registration = await selfRegisterToTournamentService(
+      req.params.id as string,
+      req.user.id,
+      {
+        ...((playerCategory ?? category) !== undefined && { playerCategory: playerCategory ?? category }),
+        ...(channel !== undefined && { channel }),
+        ...(notes !== undefined && { notes }),
+      },
+    );
+
+    res.status(201).json({
+      ok: true,
+      requiresPayment: false,
+      registrationStatus: registration.status,
+      data: registration,
+    });
+  } catch (error: any) {
+    const status = error.message === "Torneo no encontrado." ? 404 : 400;
+    res.status(status).json({ ok: false, message: error.message });
   }
 }
 

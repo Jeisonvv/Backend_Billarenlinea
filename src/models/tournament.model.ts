@@ -41,6 +41,8 @@ export interface ITournament {
   startDate: Date;             // Cuándo empieza el torneo
   endDate?: Date;              // Cuándo termina (se llena cuando finaliza)
   registrationDeadline: Date;  // Fecha límite para inscribirse
+  discount20Deadline?: Date;   // Hasta cuándo aplica el 20% de descuento
+  discount10Deadline?: Date;   // Hasta cuándo aplica el 10% de descuento
 
   location?: string;   // Dirección del lugar si es presencial
   streamUrl?: string;  // Link de YouTube/Facebook si hay transmisión
@@ -107,6 +109,14 @@ const prizeSchema = new Schema<IPrize>(
   { _id: false }, // Sin _id propio para cada premio
 );
 
+function normalizeOptionalDate(value: unknown) {
+  if (value === "" || value === null || value === undefined) {
+    return undefined;
+  }
+
+  return value;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ESQUEMA PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +172,14 @@ const tournamentSchema = new Schema<ITournamentDocument>(
       type: Date,
       required: true,
     },
+    discount20Deadline: {
+      type: Date,
+      set: normalizeOptionalDate,
+    },
+    discount10Deadline: {
+      type: Date,
+      set: normalizeOptionalDate,
+    },
     location: String,
     streamUrl: String,
     imageUrl: String,
@@ -216,6 +234,34 @@ tournamentSchema.virtual("isRegistrationOpen").get(function (
 ) {
   const deadlineNotPassed = new Date() <= this.registrationDeadline;
   return this.status === TournamentStatus.OPEN && deadlineNotPassed;
+});
+
+tournamentSchema.pre("validate", function () {
+  const tournament = this as ITournamentDocument;
+
+  if (tournament.entryFee <= 0) {
+    throw new Error("El costo de inscripción del torneo debe ser mayor a 0.");
+  }
+
+  if (tournament.registrationDeadline >= tournament.startDate) {
+    throw new Error("La fecha límite de inscripción debe ser anterior al inicio del torneo.");
+  }
+
+  if (tournament.discount20Deadline && tournament.discount20Deadline >= tournament.startDate) {
+    throw new Error("La fecha del descuento del 20% debe ser anterior al inicio del torneo.");
+  }
+
+  if (tournament.discount10Deadline && tournament.discount10Deadline >= tournament.startDate) {
+    throw new Error("La fecha del descuento del 10% debe ser anterior al inicio del torneo.");
+  }
+
+  if (
+    tournament.discount20Deadline &&
+    tournament.discount10Deadline &&
+    tournament.discount20Deadline >= tournament.discount10Deadline
+  ) {
+    throw new Error("La fecha del descuento del 20% debe ser anterior a la del 10%.");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

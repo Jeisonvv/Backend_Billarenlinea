@@ -81,6 +81,8 @@ Configura estas variables en `.env`:
 WOMPI_PUBLIC_KEY=pub_test_xxxxxxxxxxxxxxxxx
 WOMPI_INTEGRITY_SECRET=test_integrity_xxxxxxxxxxxxxxxxx
 WOMPI_EVENTS_SECRET=test_events_xxxxxxxxxxxxxxxxx
+WOMPI_RAFFLES_REDIRECT_URL=http://localhost:5173/payments/wompi/raffles
+WOMPI_TOURNAMENTS_REDIRECT_URL=http://localhost:5173/payments/wompi/tournaments
 WOMPI_REDIRECT_URL=http://localhost:5173/payments/wompi
 RAFFLE_RESERVATION_MINUTES=15
 ```
@@ -90,8 +92,16 @@ Descripcion:
 - `WOMPI_PUBLIC_KEY`: llave publica usada por Widget y Checkout Web.
 - `WOMPI_INTEGRITY_SECRET`: secreto usado para generar la firma de integridad.
 - `WOMPI_EVENTS_SECRET`: secreto usado para validar el checksum del webhook.
-- `WOMPI_REDIRECT_URL`: URL del frontend a la que Wompi redirige al finalizar el pago.
+- `WOMPI_RAFFLES_REDIRECT_URL`: URL especifica de retorno para pagos de rifas.
+- `WOMPI_TOURNAMENTS_REDIRECT_URL`: URL especifica de retorno para pagos de inscripciones o torneos.
+- `WOMPI_REDIRECT_URL`: URL global de fallback si no defines una especifica por flujo.
 - `RAFFLE_RESERVATION_MINUTES`: minutos durante los cuales se bloquean los numeros reservados.
+
+Prioridad de resolucion para rifas:
+
+- primero `WOMPI_RAFFLES_REDIRECT_URL`
+- luego `WOMPI_REDIRECT_URL`
+- si ninguna existe, el backend usa `FRONTEND_URL` y construye `/payments/wompi/raffles`
 
 ## Endpoints de rifas
 

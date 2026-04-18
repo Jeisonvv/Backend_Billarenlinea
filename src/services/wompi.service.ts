@@ -36,13 +36,19 @@ export interface WompiEventPayload {
   timestamp?: number;
 }
 
-const WOMPI_PUBLIC_KEY = process.env.WOMPI_PUBLIC_KEY?.trim();
-const WOMPI_INTEGRITY_SECRET = process.env.WOMPI_INTEGRITY_SECRET?.trim();
-const WOMPI_EVENTS_SECRET = process.env.WOMPI_EVENTS_SECRET?.trim();
 const WOMPI_CHECKOUT_URL = "https://checkout.wompi.co/p/";
 const WOMPI_WIDGET_URL = "https://checkout.wompi.co/widget.js";
 
+type WompiRedirectFlow = "raffles" | "tournaments" | "generic";
+
+function getWompiEnv(name: "WOMPI_PUBLIC_KEY" | "WOMPI_INTEGRITY_SECRET" | "WOMPI_EVENTS_SECRET") {
+  return process.env[name]?.trim();
+}
+
 export function requireWompiConfig() {
+  const WOMPI_PUBLIC_KEY = getWompiEnv("WOMPI_PUBLIC_KEY");
+  const WOMPI_INTEGRITY_SECRET = getWompiEnv("WOMPI_INTEGRITY_SECRET");
+
   if (!WOMPI_PUBLIC_KEY || !WOMPI_INTEGRITY_SECRET) {
     throw new Error("Wompi no está configurado. Revisa WOMPI_PUBLIC_KEY y WOMPI_INTEGRITY_SECRET.");
   }
@@ -53,7 +59,15 @@ export function requireWompiConfig() {
   };
 }
 
-export function getWompiRedirectUrl() {
+export function getWompiRedirectUrl(flow: WompiRedirectFlow = "generic") {
+  const explicitByFlow = {
+    raffles: process.env.WOMPI_RAFFLES_REDIRECT_URL?.trim(),
+    tournaments: process.env.WOMPI_TOURNAMENTS_REDIRECT_URL?.trim(),
+    generic: process.env.WOMPI_REDIRECT_URL?.trim(),
+  }[flow];
+
+  if (explicitByFlow) return explicitByFlow;
+
   const explicit = process.env.WOMPI_REDIRECT_URL?.trim();
   if (explicit) return explicit;
 
@@ -62,7 +76,13 @@ export function getWompiRedirectUrl() {
     throw new Error("No se encontró WOMPI_REDIRECT_URL ni FRONTEND_URL para redirección de pagos.");
   }
 
-  return new URL("/payments/wompi", frontend).toString();
+  const defaultPathByFlow = {
+    raffles: "/payments/wompi/raffles",
+    tournaments: "/payments/wompi/tournaments",
+    generic: "/payments/wompi",
+  } satisfies Record<WompiRedirectFlow, string>;
+
+  return new URL(defaultPathByFlow[flow], frontend).toString();
 }
 
 export function sha256Hex(value: string) {
@@ -126,6 +146,8 @@ export function normalizeWompiTransactionStatus(status?: string) {
   }
 }
 export function verifyWompiEvent(payload: WompiEventPayload, headerChecksum?: string | string[]) {
+  const WOMPI_EVENTS_SECRET = getWompiEnv("WOMPI_EVENTS_SECRET");
+
   if (!WOMPI_EVENTS_SECRET) {
     throw new Error("WOMPI_EVENTS_SECRET no está configurado.");
   }

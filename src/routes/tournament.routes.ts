@@ -8,6 +8,7 @@
  *   GET   /                              → Listar torneos (filtros: status, format, page, limit)
  *   GET   /:id                           → Detalle completo (inscripciones + grupos)
  *   GET   /:id/registrations             → Lista de inscritos (filtro opcional: ?status=CONFIRMED)
+ *   POST  /:id/register-self             → Autoinscripción del usuario autenticado
  *
  * ── Bracket de eliminación directa ────────────────────────────────────────
  *   POST  /:id/generate-bracket          → Genera bracket desde inscritos CONFIRMED
@@ -27,6 +28,7 @@ import {
   getTournamentById,
   getTournamentRegistrations,
   registerPlayerHandler,
+  selfRegisterToTournamentHandler,
   generateBracketHandler,
   createGroupsHandler,
   autoCreateGroupsHandler,
@@ -42,6 +44,7 @@ import {
   addPlayerToGroupHandler,
   getPendingPaymentsHandler,
 } from "../controllers/tournament.controller.js";
+import { createTournamentWompiCheckout } from "../controllers/payment.controller.js";
 import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
 import { UserRole } from "../models/enums.js";
 
@@ -57,7 +60,9 @@ router.get("/:id",               getTournamentById);
 router.get("/:id/registrations", getTournamentRegistrations);
 
 // ── Inscripciones ──────────────────────────────────────────────────────────
+router.post("/:id/register-self",                   requireAuth, selfRegisterToTournamentHandler);
 router.post("/:id/register",                        ...adminOrStaff, registerPlayerHandler);
+router.post("/:id/wompi/checkout",                  requireAuth, createTournamentWompiCheckout);
 router.patch("/:id/registrations/:userId/handicap", ...adminOrStaff, updateHandicapHandler);
 
 // ── Bracket ────────────────────────────────────────────────────────────────
