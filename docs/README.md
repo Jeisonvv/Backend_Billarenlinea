@@ -9,6 +9,7 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 - data/: guias de seeding y verificacion de datos.
 - bot/: documentacion de integracion tecnica del bot con el backend.
 - events/: documentacion del catalogo y gestion de eventos.
+- blog/: documentacion del blog informativo y sus endpoints.
 
 ## Archivos
 
@@ -33,3 +34,8 @@ Este directorio agrupa las guias operativas y de integracion del proyecto.
 ### events
 
 - events/EVENTS_API_GUIDE.md: catalogo y administracion de eventos como copas, masters y campeonatos.
+
+### blog
+
+- blog/BLOG_API_GUIDE.md: endpoints del blog, estructura del modelo Post y recomendaciones SEO.
+- blog/BLOG_FRONTEND_RENDERER_GUIDE.md: ejemplo de renderizado React para contentBlocks, SEO y embeds de YouTube.

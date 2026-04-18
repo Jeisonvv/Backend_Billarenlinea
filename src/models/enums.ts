@@ -184,6 +184,13 @@ export enum EventTicketingMode {
   INTERNAL = "INTERNAL",
 }
 
+// ── Estados de publicación de contenidos ───────────────────────────────────
+// Permite manejar borradores y publicaciones del blog informativo.
+export enum PostStatus {
+  DRAFT = "DRAFT",
+  PUBLISHED = "PUBLISHED",
+}
+
 // ── Estados de inscripción a torneo ───────────────────────────────────────────
 // Estado de la inscripción de un jugador específico a un torneo específico.
 export enum RegistrationStatus {

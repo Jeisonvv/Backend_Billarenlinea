@@ -26,6 +26,7 @@ import userRoutes from './routes/user.routes.js';
 import leadSessionRoutes from './routes/lead-session.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import eventRoutes from './routes/event.routes.js';
+import postRoutes from './routes/post.routes.js';
 import transmissionRoutes from './routes/transmission.routes.js';
 import raffleRoutes from './routes/raffle.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
@@ -89,6 +90,7 @@ app.use('/api/auth',        authRoutes);       // Login y registro
 app.use('/api/users',       userRoutes);       // CRUD de usuarios
 app.use('/api/lead-sessions', leadSessionRoutes); // Sesiones temporales del bot
 app.use('/api/events',      eventRoutes);      // Eventos, copas y campeonatos
+app.use('/api/posts',       postRoutes);       // Blog informativo y contenidos SEO
 app.use('/api/tournaments', tournamentRoutes); // Torneos, grupos y brackets
 app.use('/api/matches',     matchRoutes);      // Partidos y resultados
 app.use('/api/transmissions', transmissionRoutes); // Transmisiones en vivo/eventos

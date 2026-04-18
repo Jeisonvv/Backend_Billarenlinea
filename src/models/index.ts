@@ -45,6 +45,10 @@ export type { ITournament, ITournamentDocument, IPrize } from "./tournament.mode
 export { default as Event } from "./event.model.js";
 export type { IEvent, IEventDocument, IEventPrize } from "./event.model.js";
 
+// Modelo de posts del blog
+export { default as Post } from "./post.model.js";
+export type { IPost, IPostDocument } from "./post.model.js";
+
 // Modelo de inscripciones a torneos
 export { default as TournamentRegistration } from "./tournament-registration.model.js";
 export type { ITournamentRegistration, ITournamentRegistrationDocument, ITournamentRegistrationModel } from "./tournament-registration.model.js";
