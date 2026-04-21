@@ -202,10 +202,21 @@ Content-Type: application/json
 {
   "name": "Juan Pérez",
   "email": "juan@ejemplo.com",
-  "password": "miPassword123",
-  "phone": "+573001234567"
+  "phone": "+573001234567",
+  "identityDocument": "1234567890",
+  "password": "miPassword123"
 }
 ```
+
+Campos mínimos obligatorios:
+
+- `name`
+- `email`
+- `phone`
+- `identityDocument`
+- `password`
+
+La contraseña debe tener al menos 8 caracteres.
 
 **Respuesta `201`:**
 ```json
@@ -215,6 +226,7 @@ Content-Type: application/json
     "id": "65f...",
     "name": "Juan Pérez",
     "email": "juan@ejemplo.com",
+    "identityDocument": "1234567890",
     "role": "CUSTOMER"
   }
 }
@@ -279,7 +291,7 @@ El token expira en **30 días**. Al expirar, el cliente debe hacer login nuevame
 
 | Método | Ruta | Auth | Descripción |
 |---|---|---|---|
-| `POST` | `/api/auth/register` | ❌ Público | Crea cuenta web con email y contraseña |
+| `POST` | `/api/auth/register` | ❌ Público | Crea cuenta web con nombre, email, teléfono, cédula y contraseña |
 | `POST` | `/api/auth/login` | ❌ Público | Inicia sesión y guarda JWT en cookie httpOnly |
 | `POST` | `/api/auth/bot-login` | Header `X-Bot-Token` | Login técnico para el bot, devuelve JWT en body |
 
@@ -399,10 +411,12 @@ Body opcional si todavía no existe la inscripción y quieres crearla en el mism
 Comportamiento:
 
 - Si la inscripción pagada no existe, el backend la crea primero en estado `PENDING`.
+- El backend toma la cédula desde el perfil del usuario; ya no se envía en el body del torneo.
 - Si ya existe una transacción Wompi pendiente o aprobada para esa inscripción, el backend la reutiliza.
 - El checkout usa la tarifa vigente según el torneo: `DISCOUNT_20`, `DISCOUNT_10` o `FULL`.
 - La expiración del checkout queda en la fecha de la promoción vigente. Si no hay promoción activa, vence en la fecha límite final de pago, que es el día anterior al torneo o `registrationDeadline`, lo que ocurra primero.
 - Cuando Wompi envía el webhook de aprobación dentro de la vigencia del checkout, la inscripción pasa a `CONFIRMED`, guarda `paidAt` y aumenta `currentParticipants` del torneo.
+- Si el checkout vence sin pago, la inscripción pasa a `CANCELLED` y el jugador sale del registro activo del torneo.
 
 Campos opcionales del torneo para promociones:
 

@@ -187,7 +187,7 @@ export async function register(req: Request, res: Response) {
     });
   } catch (error: any) {
     if (
-      error.message === "name, email y password son obligatorios."
+      error.message === "name, email, phone, identityDocument y password son obligatorios."
       || error.message === "La contraseña debe tener al menos 8 caracteres."
       || error.message === "El documento de identidad es inválido."
     ) {

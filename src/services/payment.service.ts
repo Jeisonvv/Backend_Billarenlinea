@@ -13,6 +13,7 @@ import {
   PaymentPayableType,
   PaymentProvider,
   PaymentTransactionStatus,
+  PlayerCategory,
   RaffleNumberStatus,
   RaffleStatus,
   RegistrationStatus,
@@ -28,7 +29,10 @@ import {
   type WompiEventPayload,
   verifyWompiEvent,
 } from "./wompi.service.js";
-import { selfRegisterToTournamentService } from "./tournament.service.js";
+import {
+  ensureTournamentRegistrantIdentityDocument,
+  selfRegisterToTournamentService,
+} from "./tournament.service.js";
 
 interface ActorContext {
   id: string;
@@ -539,11 +543,15 @@ export async function createWompiCheckoutForRaffle(
 
   const userObjectId = toObjectId(targetUserId, "User ID");
   const user = await User.findById(userObjectId)
-    .select("name phone webAuth.email deletedAt")
+    .select("name phone webAuth.email deletedAt playerCategory")
     .lean();
 
   if (!user || user.deletedAt) {
     throw new Error("Usuario no encontrado.");
+  }
+
+  if (user.playerCategory === PlayerCategory.SIN_DEFINIR) {
+    throw new Error("La inscripción está pendiente de confirmación administrativa. Asigna la categoría del jugador antes de cobrar el torneo.");
   }
 
   const customerEmail = user.webAuth?.email?.trim();
@@ -766,6 +774,8 @@ export async function createWompiCheckoutForTournament(
   }
 
   const userObjectId = toObjectId(targetUserId, "User ID");
+  await ensureTournamentRegistrantIdentityDocument(targetUserId);
+
   const user = await User.findById(userObjectId)
     .select("name phone webAuth.email deletedAt")
     .lean();
@@ -785,6 +795,10 @@ export async function createWompiCheckoutForTournament(
   })
     .select("_id status playerCategory handicap")
     .lean();
+
+  if (registration?.status === RegistrationStatus.CANCELLED) {
+    registration = null;
+  }
 
   if (!registration) {
     const createdRegistration = await selfRegisterToTournamentService(
@@ -1089,6 +1103,27 @@ async function handleTournamentRegistrationPaymentStatus(
     throw new Error("Inscripción de torneo no encontrada.");
   }
 
+  const cancelPendingRegistration = async () => {
+    await TournamentRegistration.updateOne(
+      { _id: registration._id, status: { $ne: RegistrationStatus.CONFIRMED } },
+      {
+        $set: {
+          status: RegistrationStatus.CANCELLED,
+          ...(transaction.reference ? { paymentReference: transaction.reference } : {}),
+        },
+        $unset: {
+          paymentMethod: "",
+          paidAt: "",
+        },
+      },
+    );
+
+    return TournamentRegistration.findById(registration._id)
+      .populate("user", "name phone avatarUrl")
+      .populate("tournament", "name entryFee startDate")
+      .lean();
+  };
+
   if (status === PaymentTransactionStatus.APPROVED) {
     if (registration.status === RegistrationStatus.CONFIRMED) {
       return registration;
@@ -1108,6 +1143,8 @@ async function handleTournamentRegistrationPaymentStatus(
           },
         },
       );
+
+      await cancelPendingRegistration();
 
       return {
         ok: true,
@@ -1197,11 +1234,14 @@ async function handleTournamentRegistrationPaymentStatus(
       .lean();
   }
 
+  if (status === PaymentTransactionStatus.EXPIRED) {
+    return cancelPendingRegistration();
+  }
+
   if ([
     PaymentTransactionStatus.DECLINED,
     PaymentTransactionStatus.VOIDED,
     PaymentTransactionStatus.ERROR,
-    PaymentTransactionStatus.EXPIRED,
   ].includes(status)) {
     await TournamentRegistration.updateOne(
       { _id: registration._id, status: { $ne: RegistrationStatus.CONFIRMED } },

@@ -150,26 +150,6 @@ export async function selfRegisterToTournamentHandler(req: Request, res: Respons
       return;
     }
 
-    if (tournament.entryFee > 0) {
-      const checkout = await createWompiCheckoutForTournament(
-        req.params.id as string,
-        req.user,
-        {
-          ...((playerCategory ?? category) !== undefined && { playerCategory: playerCategory ?? category }),
-          ...(channel !== undefined && { channel }),
-          ...(notes !== undefined && { notes }),
-        },
-      );
-
-      res.status(200).json({
-        ok: true,
-        requiresPayment: true,
-        registrationStatus: "PENDING",
-        data: checkout,
-      });
-      return;
-    }
-
     const registration = await selfRegisterToTournamentService(
       req.params.id as string,
       req.user.id,
@@ -180,10 +160,32 @@ export async function selfRegisterToTournamentHandler(req: Request, res: Respons
       },
     );
 
+    if (tournament.entryFee > 0 && registration.playerCategory !== "SIN_DEFINIR") {
+      const checkout = await createWompiCheckoutForTournament(
+        req.params.id as string,
+        req.user,
+        {
+          ...(channel !== undefined && { channel }),
+          ...(notes !== undefined && { notes }),
+        },
+      );
+
+      res.status(200).json({
+        ok: true,
+        requiresPayment: true,
+        registrationStatus: registration.status,
+        data: checkout,
+      });
+      return;
+    }
+
     res.status(201).json({
       ok: true,
       requiresPayment: false,
       registrationStatus: registration.status,
+      ...(registration.playerCategory === "SIN_DEFINIR"
+        ? { message: "La inscripción quedó pendiente de confirmación por un administrador." }
+        : {}),
       data: registration,
     });
   } catch (error: any) {

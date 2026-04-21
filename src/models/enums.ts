@@ -58,6 +58,7 @@ export enum LeadSessionStatus {
 // Nivel competitivo del jugador de billar.
 // Se usa para filtrar en qué torneos puede participar cada jugador.
 export enum PlayerCategory {
+  SIN_DEFINIR = "SIN_DEFINIR", // Categoría temporal hasta revisión administrativa
   TERCERA = "TERCERA", // Nivel básico / principiante
   SEGUNDA = "SEGUNDA", // Nivel intermedio
   PRIMERA = "PRIMERA", // Nivel avanzado

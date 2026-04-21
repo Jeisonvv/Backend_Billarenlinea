@@ -230,8 +230,8 @@ export async function createUserService(data: Record<string, unknown>) {
 export async function createWebUserService(params: CreateWebUserParams) {
   const { name, email, password, phone, identityDocument } = params;
 
-  if (!name || !email || !password) {
-    throw new Error("name, email y password son obligatorios.");
+  if (!name || !email || !password || !phone || !identityDocument) {
+    throw new Error("name, email, phone, identityDocument y password son obligatorios.");
   }
 
   if (password.length < 8) {

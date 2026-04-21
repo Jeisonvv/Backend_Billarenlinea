@@ -9,10 +9,15 @@ Este proyecto tiene dos endpoints para crear usuarios porque atienden casos de u
 Usa este endpoint cuando un cliente se registra por la web.
 
 - Es público.
-- Requiere `name`, `email` y `password`.
+- Requiere `name`, `email`, `phone`, `identityDocument` y `password`.
 - Crea una cuenta web con credenciales.
-- Guarda `identityDocument` si se envía.
+- Valida duplicados por email, teléfono y cédula.
 - Aplica las mismas validaciones de duplicados que el alta administrativa.
+
+Reglas importantes:
+
+- `password` debe tener al menos 8 caracteres.
+- `identityDocument` se normaliza antes de guardarse.
 
 Ejemplo:
 
@@ -99,3 +104,13 @@ Aunque existan dos endpoints, la creación real del usuario se resuelve en el se
 ## Rifas gratis
 
 Las rifas gratis usan `identityDocument` para asegurar que una persona no participe dos veces con cuentas distintas.
+
+## Torneos
+
+Para inscribir un usuario en torneos con `POST /api/tournaments/:id/register-self`, `POST /api/tournaments/:id/register` o `POST /api/tournaments/:id/wompi/checkout`, el backend exige que el usuario tenga `identityDocument` registrado.
+
+La cédula ya no se envía en el body de inscripción al torneo ni en el body del checkout. El torneo toma ese dato directamente del perfil del usuario.
+
+En torneos pagos, la inscripción se crea en estado `PENDING`, el backend entrega el checkout de Wompi y solo pasa a `CONFIRMED` cuando Wompi reporta pago aprobado dentro del tiempo válido.
+
+Si el checkout expira sin pago, la inscripción pasa a `CANCELLED` y el usuario sale del registro activo del torneo.

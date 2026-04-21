@@ -3,8 +3,18 @@ import Tournament from "../models/tournament.model.js";
 import TournamentRegistration from "../models/tournament-registration.model.js";
 import TournamentGroup from "../models/tournament-group.model.js";
 import Match from "../models/match.model.js";
+import PaymentTransaction from "../models/payment-transaction.model.js";
 import User from "../models/user.model.js";
-import { Channel, PlayerCategory, RegistrationStatus, RoundType, TournamentStatus } from "../models/enums.js";
+import {
+  Channel,
+  PaymentPayableType,
+  PaymentProvider,
+  PaymentTransactionStatus,
+  PlayerCategory,
+  RegistrationStatus,
+  RoundType,
+  TournamentStatus,
+} from "../models/enums.js";
 import {
   generateBracket,
   createGroups,
@@ -78,17 +88,103 @@ function resolveTournamentPlayerCategory(
   inputCategory: string | undefined,
   userCategory: string | undefined,
 ) {
-  const resolvedCategory = inputCategory ?? userCategory;
-
-  if (!resolvedCategory) {
-    throw new Error("El jugador debe tener categoría registrada para inscribirse al torneo.");
-  }
+  const resolvedCategory = inputCategory ?? userCategory ?? PlayerCategory.SIN_DEFINIR;
 
   if (!Object.values(PlayerCategory).includes(resolvedCategory as PlayerCategory)) {
     throw new Error("La categoría del jugador es inválida.");
   }
 
   return resolvedCategory as PlayerCategory;
+}
+
+export async function ensureTournamentRegistrantIdentityDocument(
+  userId: string,
+) {
+  const user = await User.findById(userId)
+    .select("_id deletedAt playerCategory identityDocument")
+    .lean();
+
+  if (!user || user.deletedAt) {
+    throw new Error("Usuario no encontrado.");
+  }
+
+  if (!user.identityDocument) {
+    throw new Error("El usuario no tiene cédula registrada.");
+  }
+
+  return user;
+}
+
+async function resolveReusableTournamentRegistration(
+  tournamentId: string,
+  userId: string,
+) {
+  const existingRegistration = await TournamentRegistration.findOne({
+    tournament: tournamentId,
+    user: userId,
+  })
+    .select("_id status playerCategory")
+    .lean();
+
+  if (!existingRegistration) {
+    return null;
+  }
+
+  if (existingRegistration.status === RegistrationStatus.CONFIRMED) {
+    return existingRegistration;
+  }
+
+  const now = new Date();
+  const hasExpiredPayment = await PaymentTransaction.findOne({
+    provider: PaymentProvider.WOMPI,
+    payableType: PaymentPayableType.TOURNAMENT_REGISTRATION,
+    payableId: existingRegistration._id,
+    $or: [
+      { status: PaymentTransactionStatus.EXPIRED },
+      {
+        status: PaymentTransactionStatus.PENDING,
+        expiresAt: { $lte: now },
+      },
+    ],
+  })
+    .select("_id")
+    .lean();
+
+  if (!hasExpiredPayment) {
+    return existingRegistration;
+  }
+
+  await Promise.all([
+    PaymentTransaction.updateMany(
+      {
+        provider: PaymentProvider.WOMPI,
+        payableType: PaymentPayableType.TOURNAMENT_REGISTRATION,
+        payableId: existingRegistration._id,
+        status: PaymentTransactionStatus.PENDING,
+        expiresAt: { $lte: now },
+      },
+      { $set: { status: PaymentTransactionStatus.EXPIRED } },
+    ),
+    TournamentRegistration.updateOne(
+      {
+        _id: existingRegistration._id,
+        status: { $ne: RegistrationStatus.CONFIRMED },
+      },
+      {
+        $set: { status: RegistrationStatus.CANCELLED },
+        $unset: {
+          paymentMethod: "",
+          paymentReference: "",
+          paidAt: "",
+        },
+      },
+    ),
+  ]);
+
+  return {
+    ...existingRegistration,
+    status: RegistrationStatus.CANCELLED,
+  };
 }
 
 async function createTournamentRegistration(
@@ -111,17 +207,16 @@ async function createTournamentRegistration(
     throw new Error("El torneo ya alcanzó el máximo de participantes confirmados.");
   }
 
-  const user = await User.findById(userId)
-    .select("_id deletedAt playerCategory")
-    .lean();
-
-  if (!user || user.deletedAt) {
-    throw new Error("Usuario no encontrado.");
-  }
+  const user = await ensureTournamentRegistrantIdentityDocument(userId);
 
   const playerCategory = resolveTournamentPlayerCategory(data.playerCategory, user.playerCategory);
+  const requiresAdminApproval = playerCategory === PlayerCategory.SIN_DEFINIR;
 
-  if (tournament.allowedCategories.length > 0 && !tournament.allowedCategories.includes(playerCategory)) {
+  if (
+    !requiresAdminApproval
+    && tournament.allowedCategories.length > 0
+    && !tournament.allowedCategories.includes(playerCategory)
+  ) {
     throw new Error("La categoría del jugador no está permitida en este torneo.");
   }
 
@@ -133,26 +228,59 @@ async function createTournamentRegistration(
     ? (data.handicap ?? 12)
     : undefined;
 
-  const existing = await TournamentRegistration.findOne({
-    tournament: tournamentId,
-    user: userId,
-  });
-  if (existing) throw new Error("El jugador ya está inscrito en este torneo.");
+  const existing = await resolveReusableTournamentRegistration(tournamentId, userId);
+  const canReusePendingAdministrativeRegistration = (
+    existing?.status === RegistrationStatus.PENDING
+    && existing.playerCategory === PlayerCategory.SIN_DEFINIR
+    && playerCategory !== PlayerCategory.SIN_DEFINIR
+  );
 
-  const status = tournament.entryFee === 0
+  if (
+    existing
+    && existing.status !== RegistrationStatus.CANCELLED
+    && !canReusePendingAdministrativeRegistration
+  ) {
+    throw new Error("El jugador ya está inscrito en este torneo.");
+  }
+
+  const status = requiresAdminApproval
+    ? RegistrationStatus.PENDING
+    : tournament.entryFee === 0
     ? RegistrationStatus.CONFIRMED
     : RegistrationStatus.PENDING;
 
-  const registration = await TournamentRegistration.create({
-    tournament: tournamentId,
-    user: userId,
+  let registrationId = existing?._id;
+  const registrationUpdate = {
     status,
     playerCategory,
     channel: resolveTournamentChannel(data.channel),
     ...(finalHandicap !== undefined && { handicap: finalHandicap }),
     ...(data.notes !== undefined && { notes: data.notes }),
     ...(status === RegistrationStatus.CONFIRMED && { paidAt: new Date() }),
-  });
+  };
+
+  if (registrationId) {
+    await TournamentRegistration.updateOne(
+      { _id: registrationId },
+      {
+        $set: registrationUpdate,
+        $unset: {
+          paymentMethod: "",
+          paymentReference: "",
+          ...(finalHandicap === undefined ? { handicap: "" } : {}),
+          ...(status !== RegistrationStatus.CONFIRMED ? { paidAt: "" } : {}),
+        },
+      },
+    );
+  } else {
+    const createdRegistration = await TournamentRegistration.create({
+      tournament: tournamentId,
+      user: userId,
+      ...registrationUpdate,
+    });
+
+    registrationId = createdRegistration._id;
+  }
 
   if (status === RegistrationStatus.CONFIRMED) {
     await Tournament.updateOne(
@@ -161,9 +289,17 @@ async function createTournamentRegistration(
     );
   }
 
-  const populatedRegistration = await TournamentRegistration.findById(registration._id)
+  const populatedRegistration = await TournamentRegistration.findOne({
+    _id: registrationId,
+    tournament: tournamentId,
+    user: userId,
+  })
     .populate("user", "name phone avatarUrl playerCategory")
     .lean();
+
+  if (!populatedRegistration) {
+    throw new Error("No fue posible preparar la inscripción del torneo.");
+  }
 
   return mapTournamentRegistrationForResponse(populatedRegistration);
 }

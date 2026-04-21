@@ -363,7 +363,7 @@ const userSchema = new Schema<IUserDocument, IUserModel>(
     playerCategory: {
       type: String,
       enum: Object.values(PlayerCategory),
-      // Sin default porque no todos los usuarios son jugadores de billar
+      default: PlayerCategory.SIN_DEFINIR,
     },
 
     role: {
